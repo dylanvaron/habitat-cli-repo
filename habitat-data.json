@@ -1,0 +1,78 @@
+{
+  "greenhouse": {
+    "temperature": 27,
+    "humidity": 68,
+    "airComposition": "oxygen-rich",
+    "lightLevel": 82,
+    "integrity": 97,
+    "growing": {
+      "tomatoes": 4,
+      "basil": 1,
+      "lettuce": 1
+    }
+  },
+  "airlock": {
+    "pressureLevel": 100,
+    "doorStatus": "closed",
+    "sanitation": "clean"
+  },
+  "waterRecycler": {
+    "waterCapacity": 95,
+    "cleanlinessLevel": 90,
+    "filterCondition": "used",
+    "filtrationRunning": false
+  },
+  "oxygenSystem": {
+    "oxygenLevel": 85,
+    "airConcentration": "oxygen-rich"
+  },
+  "basicBatteries": {
+    "battery-alpha": {
+      "name": "battery-alpha",
+      "chargeAmount": 40,
+      "isCharging": true,
+      "providingEnergyTo": "greenhouse",
+      "powerSystemName": "central-grid"
+    },
+    "battery-beta": {
+      "name": "battery-beta",
+      "chargeAmount": 65,
+      "isCharging": false,
+      "providingEnergyTo": "lights",
+      "powerSystemName": "central-grid"
+    },
+    "battery-1": {
+      "name": "battery-1",
+      "chargeAmount": 40,
+      "isCharging": true,
+      "providingEnergyTo": "greenhouse",
+      "powerSystemName": "central-grid"
+    }
+  },
+  "powerSystems": {
+    "central-grid": {
+      "name": "central-grid",
+      "basicBatteryNames": [
+        "battery-alpha",
+        "battery-beta",
+        "battery-1"
+      ],
+      "numberOfBatteries": 3,
+      "totalPowerStored": 145,
+      "roomsReceivingPower": {
+        "greenhouse": 20,
+        "lab": 35
+      }
+    },
+    "test-grid": {
+      "name": "test-grid",
+      "basicBatteryNames": [],
+      "numberOfBatteries": 0,
+      "totalPowerStored": 0,
+      "roomsReceivingPower": {
+        "greenhouse": 20,
+        "lab": 35
+      }
+    }
+  }
+}

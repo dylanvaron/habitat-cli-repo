@@ -1,0 +1,17 @@
+{
+  "name": "habitat",
+  "version": "0.1.0",
+  "description": "A small Bun and TypeScript command-line app.",
+  "type": "module",
+  "bin": {
+    "habitat": "./src/index.ts"
+  },
+  "scripts": {
+    "habitat": "bun run src/index.ts",
+    "dev": "bun run src/index.ts",
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "commander": "^14.0.0"
+  }
+}
