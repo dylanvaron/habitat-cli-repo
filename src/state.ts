@@ -59,6 +59,30 @@ export type ProductionBlueprint = {
   [key: string]: unknown;
 };
 
+export type BlueprintCatalogResponse = {
+  catalogVersion: string;
+  blueprints: ProductionBlueprint[];
+};
+
+export type BlueprintResponse = {
+  blueprint: ProductionBlueprint;
+};
+
+export type IndustryResource = {
+  id: string;
+  resourceType: string;
+  displayName: string;
+  kind: string;
+  rarity: string;
+  description?: string;
+  unit?: string;
+};
+
+export type ResourceCatalogResponse = {
+  catalogVersion: string;
+  resources: IndustryResource[];
+};
+
 export type BlueprintIndex = Record<string, ProductionBlueprint>;
 
 export type LocalModule = {
