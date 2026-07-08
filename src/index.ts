@@ -12,10 +12,14 @@ import {
   loadBlueprints,
   loadModules,
   loadRegistration,
+  getModulePowerDrawKw,
+  isModuleRuntimeStatus,
   parseRuntimeAssignment,
+  runPowerTicks,
   saveBlueprints,
   saveModules,
   saveRegistration,
+  setModuleRuntimeStatus,
   type HabitatRecord,
   type HabitatResponse,
   type LocalModule,
@@ -119,6 +123,7 @@ program
 Examples:
   habitat register --name "Artemis Ridge"
   habitat status
+  habitat tick 1
   habitat unregister
   habitat module list
 
@@ -169,9 +174,53 @@ program
     saveRegistration(registration);
     saveBlueprints(blueprints);
     saveModules(modules);
-    console.log(`Registered "${registration.displayName}" with Kepler.`);
-    printLocalRegistration(registration);
-    console.log(`Local modules hydrated: ${Object.keys(modules).length}`);
+  console.log(`Registered "${registration.displayName}" with Kepler.`);
+  printLocalRegistration(registration);
+  console.log(`Local modules hydrated: ${Object.keys(modules).length}`);
+  });
+
+program
+  .command("tick")
+  .description("Advance the local habitat simulation by the requested number of steps.")
+  .argument("<ticks>", "Number of ticks to advance")
+  .action((ticks: string) => {
+    const registration = loadRegistration();
+
+    if (!registration) {
+      console.log("This CLI is not registered with Kepler yet.");
+      console.log('Run `habitat register --name "<habitat name>"` to register.');
+      process.exitCode = 1;
+      return;
+    }
+
+    const tickCount = Number(ticks);
+
+    if (!Number.isInteger(tickCount) || tickCount <= 0) {
+      console.log(`Invalid tick count "${ticks}". Provide a positive whole number.`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const modules = loadModules();
+    const { modules: nextModules, summary } = runPowerTicks(modules, tickCount);
+
+    saveModules(nextModules);
+
+    console.log(`Advanced ${summary.tickCount} tick(s).`);
+    console.log(`Total power demand: ${summary.totalDemandKw} kW`);
+    console.log(`Power drained: ${summary.totalDrainedKw} kW`);
+    console.log(`Shortfall: ${summary.shortfallKw} kW`);
+
+    if (summary.batteriesUsed.length > 0) {
+      console.log("Battery drain:");
+      for (const batterySummary of summary.batteriesUsed) {
+        console.log(
+          `- ${batterySummary.moduleId}: drained ${batterySummary.drainedKw} kW, remaining ${batterySummary.remainingChargeKw} kW`,
+        );
+      }
+    } else {
+      console.log("No batteries were available to drain.");
+    }
   });
 
 program
@@ -223,6 +272,8 @@ moduleCommand.addHelpText(
   `
 Examples:
   habitat module list
+  habitat module status
+  habitat module set-status <module-id> <status>
   habitat module show <module-id>
   habitat module create --blueprint-id command-module --name "Command Module Copy"
   habitat module update <module-id> --name "Updated Name" --status active
@@ -253,6 +304,73 @@ moduleCommand
           moduleRecord.moduleType ?? moduleRecord.blueprintId
         }]`,
       );
+    }
+  });
+
+moduleCommand
+  .command("status")
+  .description("Show each module's current state and power draw.")
+  .action(() => {
+    const modules = Object.values(loadModules());
+
+    if (modules.length === 0) {
+      console.log("No local modules found.");
+      return;
+    }
+
+    const rows = modules.map((moduleRecord) => {
+      const status =
+        typeof moduleRecord.runtimeAttributes.status === "string"
+          ? moduleRecord.runtimeAttributes.status
+          : "unknown";
+
+      return {
+        "Module Name": moduleRecord.displayName,
+        State: status,
+        "Power Draw (kW)": getModulePowerDrawKw(moduleRecord),
+      };
+    });
+
+    console.table(rows);
+
+    const totalCurrentPowerDrawKw = rows.reduce((total, row) => {
+      return total + Number(row["Power Draw (kW)"] || 0);
+    }, 0);
+    const oneTickEnergyCostKwh = totalCurrentPowerDrawKw / 3600;
+
+    console.log(
+      `Total current power draw: ${totalCurrentPowerDrawKw} kW | Energy cost for one tick: ${oneTickEnergyCostKwh.toFixed(6)} kWh`,
+    );
+  });
+
+moduleCommand
+  .command("set-status")
+  .description("Change a local module's runtime status.")
+  .argument("<moduleId>", "Module ID")
+  .argument("<status>", "New runtime status: offline, idle, online, active, or damaged")
+  .action((moduleId: string, status: string) => {
+    if (!isModuleRuntimeStatus(status)) {
+      console.log(
+        `Invalid status "${status}". Use one of: offline, idle, online, active, damaged.`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    const modules = loadModules();
+
+    try {
+      const moduleRecord = setModuleRuntimeStatus(modules, moduleId, status);
+      saveModules(modules);
+
+      const powerDrawKw = getModulePowerDrawKw(moduleRecord);
+      console.log(
+        `Updated ${moduleRecord.id} to ${status}. Current power draw: ${powerDrawKw} kW.`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(message);
+      process.exitCode = 1;
     }
   });
 

@@ -74,6 +74,33 @@ export type LocalModule = {
 
 export type ModuleIndex = Record<string, LocalModule>;
 
+export type PowerTickBatterySummary = {
+  moduleId: string;
+  drainedKw: number;
+  remainingChargeKw: number;
+};
+
+export type PowerTickSummary = {
+  totalDemandKw: number;
+  totalDrainedKw: number;
+  shortfallKw: number;
+  batteriesUsed: PowerTickBatterySummary[];
+};
+
+export type PowerTickRunSummary = PowerTickSummary & {
+  tickCount: number;
+};
+
+export const allowedModuleStatuses = [
+  "offline",
+  "idle",
+  "online",
+  "active",
+  "damaged",
+] as const;
+
+export type ModuleRuntimeStatus = (typeof allowedModuleStatuses)[number];
+
 function ensureHabitatDir(): void {
   mkdirSync(habitatDirPath, { recursive: true });
 }
@@ -282,6 +309,223 @@ export function disconnectDeletedModule(modules: ModuleIndex, deletedModuleId: s
   }
 
   return nextModules;
+}
+
+export function isModuleRuntimeStatus(value: string): value is ModuleRuntimeStatus {
+  return (allowedModuleStatuses as readonly string[]).includes(value);
+}
+
+export function setModuleRuntimeStatus(
+  modules: ModuleIndex,
+  moduleId: string,
+  status: ModuleRuntimeStatus,
+): LocalModule {
+  const moduleRecord = modules[moduleId];
+
+  if (!moduleRecord) {
+    throw new Error(`No local module named "${moduleId}" was found.`);
+  }
+
+  moduleRecord.runtimeAttributes.status = status;
+  return moduleRecord;
+}
+
+function cloneModules(modules: ModuleIndex): ModuleIndex {
+  const clonedModules: ModuleIndex = {};
+
+  for (const [moduleId, moduleRecord] of Object.entries(modules)) {
+    clonedModules[moduleId] = {
+      ...moduleRecord,
+      connectedTo: [...moduleRecord.connectedTo],
+      runtimeAttributes: { ...moduleRecord.runtimeAttributes },
+      capabilities: [...moduleRecord.capabilities],
+    };
+  }
+
+  return clonedModules;
+}
+
+function readPositiveRuntimeNumber(value: unknown): number {
+  if (typeof value !== "number" || Number.isNaN(value) || value <= 0) {
+    return 0;
+  }
+
+  return value;
+}
+
+export function getModulePowerDrawKw(moduleRecord: LocalModule): number {
+  const powerDrawKw = moduleRecord.runtimeAttributes.powerDrawKw;
+
+  if (typeof powerDrawKw === "number") {
+    return readPositiveRuntimeNumber(powerDrawKw);
+  }
+
+  if (!powerDrawKw || typeof powerDrawKw !== "object" || Array.isArray(powerDrawKw)) {
+    return 0;
+  }
+
+  const status = moduleRecord.runtimeAttributes.status;
+
+  if (typeof status === "string") {
+    return readPositiveRuntimeNumber(
+      (powerDrawKw as Record<string, unknown>)[status],
+    );
+  }
+
+  for (const fallbackStatus of ["active", "online", "damaged", "offline"]) {
+    const fallbackValue = readPositiveRuntimeNumber(
+      (powerDrawKw as Record<string, unknown>)[fallbackStatus],
+    );
+
+    if (fallbackValue > 0) {
+      return fallbackValue;
+    }
+  }
+
+  return 0;
+}
+
+function getBatteryStoredEnergyKw(moduleRecord: LocalModule): number {
+  return readPositiveRuntimeNumber(moduleRecord.runtimeAttributes.currentEnergyKwh);
+}
+
+function setBatteryStoredEnergyKw(moduleRecord: LocalModule, value: number): void {
+  moduleRecord.runtimeAttributes.currentEnergyKwh = value;
+}
+
+function isBatteryModule(moduleRecord: LocalModule): boolean {
+  const moduleType = moduleRecord.moduleType ?? moduleRecord.blueprintId;
+  return moduleType.includes("battery") || moduleRecord.blueprintId.includes("battery");
+}
+
+function getConnectedBatteryIds(modules: ModuleIndex): string[] {
+  const batteryIds = new Set<string>();
+
+  for (const [moduleId, moduleRecord] of Object.entries(modules)) {
+    const powerDrawKw = getModulePowerDrawKw(moduleRecord);
+
+    if (powerDrawKw <= 0) {
+      continue;
+    }
+
+    for (const connectedModuleId of moduleRecord.connectedTo) {
+      const connectedModule = modules[connectedModuleId];
+
+      if (connectedModule && isBatteryModule(connectedModule)) {
+        batteryIds.add(connectedModuleId);
+      }
+    }
+  }
+
+  return [...batteryIds].sort((left, right) => left.localeCompare(right));
+}
+
+function runSinglePowerTick(modules: ModuleIndex): {
+  modules: ModuleIndex;
+  summary: PowerTickSummary;
+} {
+  const nextModules = cloneModules(modules);
+  const batteryIds = getConnectedBatteryIds(nextModules);
+  const batteryChargeById = new Map<string, number>();
+  const batterySummaries: PowerTickBatterySummary[] = [];
+
+  for (const batteryId of batteryIds) {
+    const chargeAmount = getBatteryStoredEnergyKw(nextModules[batteryId]);
+    batteryChargeById.set(batteryId, chargeAmount);
+  }
+
+  const totalDemandKw = Object.values(nextModules).reduce((total, moduleRecord) => {
+    return total + getModulePowerDrawKw(moduleRecord);
+  }, 0);
+
+  let remainingDemandKw = totalDemandKw;
+
+  for (const batteryId of batteryIds) {
+    if (remainingDemandKw <= 0) {
+      break;
+    }
+
+    const currentChargeKw = batteryChargeById.get(batteryId) ?? 0;
+    const drainedKw = Math.min(currentChargeKw, remainingDemandKw);
+    const remainingChargeKw = currentChargeKw - drainedKw;
+
+    batteryChargeById.set(batteryId, remainingChargeKw);
+    setBatteryStoredEnergyKw(nextModules[batteryId], remainingChargeKw);
+    remainingDemandKw -= drainedKw;
+    batterySummaries.push({
+      moduleId: batteryId,
+      drainedKw,
+      remainingChargeKw,
+    });
+  }
+
+  const totalDrainedKw = totalDemandKw - remainingDemandKw;
+
+  return {
+    modules: nextModules,
+    summary: {
+      totalDemandKw,
+      totalDrainedKw,
+      shortfallKw: remainingDemandKw,
+      batteriesUsed: batterySummaries,
+    },
+  };
+}
+
+export function runPowerTick(modules: ModuleIndex): {
+  modules: ModuleIndex;
+  summary: PowerTickSummary;
+} {
+  return runSinglePowerTick(modules);
+}
+
+export function runPowerTicks(
+  modules: ModuleIndex,
+  tickCount: number,
+): {
+  modules: ModuleIndex;
+  summary: PowerTickRunSummary;
+} {
+  if (!Number.isInteger(tickCount) || tickCount <= 0) {
+    throw new Error(`Tick count must be a positive integer. Received "${tickCount}".`);
+  }
+
+  let nextModules = modules;
+  let totalDemandKw = 0;
+  let totalDrainedKw = 0;
+  let shortfallKw = 0;
+  const batterySummaryById = new Map<string, PowerTickBatterySummary>();
+
+  for (let index = 0; index < tickCount; index += 1) {
+    const result = runSinglePowerTick(nextModules);
+    nextModules = result.modules;
+    totalDemandKw += result.summary.totalDemandKw;
+    totalDrainedKw += result.summary.totalDrainedKw;
+    shortfallKw += result.summary.shortfallKw;
+
+    for (const batterySummary of result.summary.batteriesUsed) {
+      batterySummaryById.set(batterySummary.moduleId, {
+        moduleId: batterySummary.moduleId,
+        drainedKw:
+          (batterySummaryById.get(batterySummary.moduleId)?.drainedKw ?? 0) +
+          batterySummary.drainedKw,
+        remainingChargeKw: batterySummary.remainingChargeKw,
+      });
+    }
+  }
+
+  return {
+    modules: nextModules,
+    summary: {
+      tickCount,
+      totalDemandKw,
+      totalDrainedKw,
+      shortfallKw,
+      batteriesUsed: [...batterySummaryById.values()].sort((left, right) =>
+        left.moduleId.localeCompare(right.moduleId),
+      ),
+    },
+  };
 }
 
 export function getHabitatDirPath(): string {
