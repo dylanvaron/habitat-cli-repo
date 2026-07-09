@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { getOfficialBlueprint, listOfficialBlueprints, listOfficialResources } from "./kepler";
+import {
+  getOfficialBlueprint,
+  getWorldSolarIrradiance,
+  listOfficialBlueprints,
+  listOfficialResources,
+} from "./kepler";
 
 const originalFetch = globalThis.fetch;
 const originalToken = process.env.KEPLER_PLANET_TOKEN;
@@ -167,5 +172,30 @@ describe("kepler blueprint catalog helpers", () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     await listOfficialResources("2026-06-24");
+  });
+
+  test("builds the solar status request", async () => {
+    const fetchMock = mock(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe("https://planet.turingguild.com/world/solar-irradiance");
+
+      return new Response(
+        JSON.stringify({
+          solarIrradiance: {
+            wPerM2: 900,
+            condition: "clear",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const response = await getWorldSolarIrradiance();
+
+    expect(response.solarIrradiance).toEqual({
+      wPerM2: 900,
+      condition: "clear",
+    });
   });
 });

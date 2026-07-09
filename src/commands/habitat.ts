@@ -3,6 +3,7 @@ import {
   deleteHabitatRequest,
   getBaseUrl,
   getHabitatRegistrationRequest,
+  getWorldSolarIrradiance,
   registerHabitatRequest,
 } from "../kepler";
 import { printLocalRegistration, printRemoteHabitat } from "../output";
@@ -66,7 +67,7 @@ export function registerHabitatCommands(program: Command): void {
     .command("tick")
     .description("Advance the local habitat simulation by the requested number of steps.")
     .argument("<ticks>", "Number of ticks to advance")
-    .action((ticks: string) => {
+    .action(async (ticks: string) => {
       const registration = loadRegistration();
 
       if (!registration) {
@@ -87,7 +88,13 @@ export function registerHabitatCommands(program: Command): void {
       const modules = loadModules();
       const builds = loadBuilds();
       const blueprints = loadBlueprints();
-      const { modules: powerTickModules, summary } = runPowerTicks(modules, tickCount);
+      const solarResponse = await getWorldSolarIrradiance();
+      const irradianceWPerM2 = solarResponse.solarIrradiance.wPerM2;
+      const { modules: powerTickModules, summary } = runPowerTicks(
+        modules,
+        tickCount,
+        irradianceWPerM2,
+      );
       const {
         modules: postCancellationModules,
         builds: postCancellationBuilds,
@@ -111,6 +118,20 @@ export function registerHabitatCommands(program: Command): void {
       console.log(`Total energy demand: ${summary.totalEnergyDemandKwh} kWh`);
       console.log(`Energy drained: ${summary.totalEnergyDrainedKwh} kWh`);
       console.log(`Energy shortfall: ${summary.energyShortfallKwh} kWh`);
+
+      console.log("Solar generation:");
+      console.log(`- Irradiance used: ${summary.solar.irradianceWPerM2} W/m^2`);
+      console.log(`- Total generated: ${summary.solar.totalGeneratedEnergyKwh} kWh`);
+      console.log(`- Discarded excess: ${summary.solar.discardedEnergyKwh} kWh`);
+      if (summary.solar.arraysUsed.length > 0) {
+        for (const arraySummary of summary.solar.arraysUsed) {
+          console.log(
+            `- ${arraySummary.moduleId}: generated ${arraySummary.generatedEnergyKwh} kWh`,
+          );
+        }
+      } else {
+        console.log("- No small solar arrays generated power.");
+      }
 
       if (summary.batteriesUsed.length > 0) {
         console.log("Battery drain:");

@@ -376,6 +376,12 @@ describe("state helpers", () => {
         },
       ],
       forcedOfflineModuleIds: [],
+      solar: {
+        irradianceWPerM2: 0,
+        totalGeneratedEnergyKwh: 0,
+        discardedEnergyKwh: 0,
+        arraysUsed: [],
+      },
     });
     expect(result.modules["battery-a"].runtimeAttributes.currentEnergyKwh).toBe(0);
   });
@@ -430,6 +436,341 @@ describe("state helpers", () => {
     expect(result.modules["battery-a"].runtimeAttributes.currentEnergyKwh).toBeCloseTo(
       5 - 4 / 3600,
     );
+  });
+
+  test("charges batteries from one online small solar array before draining", () => {
+    const modules = {
+      command: {
+        id: "command",
+        blueprintId: "command-module",
+        moduleType: "command-module",
+        moduleLevel: null,
+        displayName: "Command Module",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "active",
+          powerDrawKw: {
+            offline: 0,
+            online: 1,
+            active: 2,
+            damaged: 1,
+          },
+        },
+        capabilities: [],
+      },
+      "battery-a": {
+        id: "battery-a",
+        blueprintId: "basic-battery",
+        moduleType: "basic-battery",
+        moduleLevel: null,
+        displayName: "Battery A",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "online",
+          currentEnergyKwh: 1,
+          energyStorageKwh: 500,
+        },
+        capabilities: [],
+      },
+      "small-solar-array-1": {
+        id: "small-solar-array-1",
+        blueprintId: "small-solar-array",
+        moduleType: "small-solar-array",
+        moduleLevel: null,
+        displayName: "Small Solar Array",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "online",
+          powerGenerationKw: 12,
+          powerDrawKw: {
+            offline: 0,
+            online: 0,
+            active: 0,
+            damaged: 0,
+          },
+        },
+        capabilities: [],
+      },
+    };
+
+    const result = runPowerTicks(modules, 1, 900);
+    const generatedEnergyKwh = 12 * (900 / 900) * 0.5 / 3600;
+
+    expect(result.summary.solar.irradianceWPerM2).toBe(900);
+    expect(result.summary.solar.totalGeneratedEnergyKwh).toBeCloseTo(generatedEnergyKwh);
+    expect(result.summary.solar.discardedEnergyKwh).toBe(0);
+    expect(result.summary.solar.arraysUsed).toEqual([
+      {
+        moduleId: "small-solar-array-1",
+        generatedEnergyKwh,
+      },
+    ]);
+    expect(result.modules["battery-a"].runtimeAttributes.currentEnergyKwh).toBeCloseTo(
+      1 + generatedEnergyKwh - 2 / 3600,
+    );
+  });
+
+  test("only online or active small solar arrays generate", () => {
+    const modules = {
+      "battery-a": {
+        id: "battery-a",
+        blueprintId: "basic-battery",
+        moduleType: "basic-battery",
+        moduleLevel: null,
+        displayName: "Battery A",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "online",
+          currentEnergyKwh: 0,
+          energyStorageKwh: 500,
+        },
+        capabilities: [],
+      },
+      "small-solar-array-1": {
+        id: "small-solar-array-1",
+        blueprintId: "small-solar-array",
+        moduleType: "small-solar-array",
+        moduleLevel: null,
+        displayName: "Online Array",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "online",
+          powerGenerationKw: 12,
+          powerDrawKw: { offline: 0, online: 0, active: 0, damaged: 0 },
+        },
+        capabilities: [],
+      },
+      "small-solar-array-2": {
+        id: "small-solar-array-2",
+        blueprintId: "small-solar-array",
+        moduleType: "small-solar-array",
+        moduleLevel: null,
+        displayName: "Damaged Array",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "damaged",
+          powerGenerationKw: 12,
+          powerDrawKw: { offline: 0, online: 0, active: 0, damaged: 0 },
+        },
+        capabilities: [],
+      },
+    };
+
+    const result = runPowerTicks(modules, 1, 900);
+
+    expect(result.summary.solar.arraysUsed).toEqual([
+      {
+        moduleId: "small-solar-array-1",
+        generatedEnergyKwh: 12 * 0.5 / 3600,
+      },
+    ]);
+  });
+
+  test("fills batteries in id order and caps at storage capacity", () => {
+    const modules = {
+      "battery-a": {
+        id: "battery-a",
+        blueprintId: "basic-battery",
+        moduleType: "basic-battery",
+        moduleLevel: null,
+        displayName: "Battery A",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "online",
+          currentEnergyKwh: 499.999,
+          energyStorageKwh: 500,
+        },
+        capabilities: [],
+      },
+      "battery-b": {
+        id: "battery-b",
+        blueprintId: "basic-battery",
+        moduleType: "basic-battery",
+        moduleLevel: null,
+        displayName: "Battery B",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "online",
+          currentEnergyKwh: 100,
+          energyStorageKwh: 500,
+        },
+        capabilities: [],
+      },
+      "small-solar-array-1": {
+        id: "small-solar-array-1",
+        blueprintId: "small-solar-array",
+        moduleType: "small-solar-array",
+        moduleLevel: null,
+        displayName: "Solar Array",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "active",
+          powerGenerationKw: 12,
+          powerDrawKw: { offline: 0, online: 0, active: 0, damaged: 0 },
+        },
+        capabilities: [],
+      },
+    };
+
+    const result = runPowerTicks(modules, 1, 900);
+    const generatedEnergyKwh = 12 * 0.5 / 3600;
+    const overflowIntoBatteryB = generatedEnergyKwh - 0.001;
+
+    expect(result.modules["battery-a"].runtimeAttributes.currentEnergyKwh).toBe(500);
+    expect(result.modules["battery-b"].runtimeAttributes.currentEnergyKwh).toBeCloseTo(
+      100 + overflowIntoBatteryB,
+    );
+    expect(result.summary.solar.discardedEnergyKwh).toBe(0);
+  });
+
+  test("discards excess solar energy when all batteries are full", () => {
+    const modules = {
+      "battery-a": {
+        id: "battery-a",
+        blueprintId: "basic-battery",
+        moduleType: "basic-battery",
+        moduleLevel: null,
+        displayName: "Battery A",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "active",
+          currentEnergyKwh: 500,
+          energyStorageKwh: 500,
+        },
+        capabilities: [],
+      },
+      "small-solar-array-1": {
+        id: "small-solar-array-1",
+        blueprintId: "small-solar-array",
+        moduleType: "small-solar-array",
+        moduleLevel: null,
+        displayName: "Solar Array",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "online",
+          powerGenerationKw: 12,
+          powerDrawKw: { offline: 0, online: 0, active: 0, damaged: 0 },
+        },
+        capabilities: [],
+      },
+    };
+
+    const result = runPowerTicks(modules, 1, 900);
+
+    expect(result.modules["battery-a"].runtimeAttributes.currentEnergyKwh).toBe(500);
+    expect(result.summary.solar.discardedEnergyKwh).toBeCloseTo(12 * 0.5 / 3600);
+  });
+
+  test("solar generation before drain can prevent a forced shutdown", () => {
+    const modules = {
+      alpha: {
+        id: "alpha",
+        blueprintId: "command-module",
+        moduleType: "command-module",
+        moduleLevel: null,
+        displayName: "Alpha Module",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "online",
+          powerDrawKw: {
+            offline: 0,
+            online: 5,
+            active: 5,
+            damaged: 1,
+          },
+        },
+        capabilities: [],
+      },
+      "battery-a": {
+        id: "battery-a",
+        blueprintId: "basic-battery",
+        moduleType: "basic-battery",
+        moduleLevel: null,
+        displayName: "Battery A",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "online",
+          currentEnergyKwh: 0,
+          energyStorageKwh: 500,
+        },
+        capabilities: [],
+      },
+      "small-solar-array-1": {
+        id: "small-solar-array-1",
+        blueprintId: "small-solar-array",
+        moduleType: "small-solar-array",
+        moduleLevel: null,
+        displayName: "Solar Array",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "online",
+          powerGenerationKw: 12,
+          powerDrawKw: { offline: 0, online: 0, active: 0, damaged: 0 },
+        },
+        capabilities: [],
+      },
+    };
+
+    const result = runPowerTicks(modules, 1, 900);
+
+    expect(result.modules.alpha.runtimeAttributes.status).toBe("online");
+    expect(result.summary.forcedOfflineModuleIds).toEqual([]);
+  });
+
+  test("offline batteries do not receive solar charge", () => {
+    const modules = {
+      "battery-a": {
+        id: "battery-a",
+        blueprintId: "basic-battery",
+        moduleType: "basic-battery",
+        moduleLevel: null,
+        displayName: "Offline Battery",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "offline",
+          currentEnergyKwh: 0,
+          energyStorageKwh: 500,
+        },
+        capabilities: [],
+      },
+      "battery-b": {
+        id: "battery-b",
+        blueprintId: "basic-battery",
+        moduleType: "basic-battery",
+        moduleLevel: null,
+        displayName: "Online Battery",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "online",
+          currentEnergyKwh: 0,
+          energyStorageKwh: 500,
+        },
+        capabilities: [],
+      },
+      "small-solar-array-1": {
+        id: "small-solar-array-1",
+        blueprintId: "small-solar-array",
+        moduleType: "small-solar-array",
+        moduleLevel: null,
+        displayName: "Solar Array",
+        connectedTo: [],
+        runtimeAttributes: {
+          status: "online",
+          powerGenerationKw: 12,
+          powerDrawKw: { offline: 0, online: 0, active: 0, damaged: 0 },
+        },
+        capabilities: [],
+      },
+    };
+
+    const result = runPowerTicks(modules, 1, 900);
+    const generatedEnergyKwh = 12 * 0.5 / 3600;
+
+    expect(result.modules["battery-a"].runtimeAttributes.currentEnergyKwh).toBe(0);
+    expect(result.modules["battery-b"].runtimeAttributes.currentEnergyKwh).toBeCloseTo(
+      generatedEnergyKwh,
+    );
+    expect(result.summary.solar.discardedEnergyKwh).toBe(0);
   });
 
   test("keeps forced-offline modules offline on later ticks until manually changed", () => {

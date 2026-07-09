@@ -100,6 +100,15 @@ export type ResourceCatalogResponse = {
   resources: IndustryResource[];
 };
 
+export type SolarIrradianceReading = {
+  wPerM2: number;
+  condition: string;
+};
+
+export type SolarIrradianceResponse = {
+  solarIrradiance: SolarIrradianceReading;
+};
+
 export type ResourceInventory = Record<string, number>;
 
 export type BlueprintIndex = Record<string, ProductionBlueprint>;
@@ -145,6 +154,18 @@ export type PowerTickBatterySummary = {
   remainingEnergyKwh: number;
 };
 
+export type SolarTickArraySummary = {
+  moduleId: string;
+  generatedEnergyKwh: number;
+};
+
+export type SolarTickSummary = {
+  irradianceWPerM2: number;
+  totalGeneratedEnergyKwh: number;
+  discardedEnergyKwh: number;
+  arraysUsed: SolarTickArraySummary[];
+};
+
 export type PowerTickSummary = {
   totalPowerDrawKw: number;
   totalEnergyDemandKwh: number;
@@ -152,6 +173,7 @@ export type PowerTickSummary = {
   energyShortfallKwh: number;
   batteriesUsed: PowerTickBatterySummary[];
   forcedOfflineModuleIds: string[];
+  solar: SolarTickSummary;
 };
 
 export type PowerTickRunSummary = {
@@ -162,6 +184,7 @@ export type PowerTickRunSummary = {
   energyShortfallKwh: number;
   batteriesUsed: PowerTickBatterySummary[];
   forcedOfflineModuleIds: string[];
+  solar: SolarTickSummary;
 };
 
 export type BuildCompletionSummary = {
@@ -961,9 +984,36 @@ function setBatteryStoredEnergyKw(moduleRecord: LocalModule, value: number): voi
   moduleRecord.runtimeAttributes.currentEnergyKwh = value;
 }
 
+function getBatteryStorageCapacityKwh(moduleRecord: LocalModule): number {
+  return readPositiveRuntimeNumber(moduleRecord.runtimeAttributes.energyStorageKwh);
+}
+
 function isBatteryModule(moduleRecord: LocalModule): boolean {
   const moduleType = moduleRecord.moduleType ?? moduleRecord.blueprintId;
   return batteryIdPattern.test(moduleType) || batteryIdPattern.test(moduleRecord.blueprintId);
+}
+
+function isSmallSolarArrayModule(moduleRecord: LocalModule): boolean {
+  const moduleType = moduleRecord.moduleType ?? moduleRecord.blueprintId;
+  return moduleType === "small-solar-array";
+}
+
+function isBatteryChargeable(moduleRecord: LocalModule): boolean {
+  return (
+    moduleRecord.runtimeAttributes.status === "online" ||
+    moduleRecord.runtimeAttributes.status === "active"
+  );
+}
+
+function isSolarGeneratingStatus(moduleRecord: LocalModule): boolean {
+  return (
+    moduleRecord.runtimeAttributes.status === "online" ||
+    moduleRecord.runtimeAttributes.status === "active"
+  );
+}
+
+function getSolarArrayGenerationKw(moduleRecord: LocalModule): number {
+  return readPositiveRuntimeNumber(moduleRecord.runtimeAttributes.powerGenerationKw);
 }
 
 function isBatteryModuleId(moduleId: string, modules: ModuleIndex): boolean {
@@ -1062,12 +1112,80 @@ function applyBatteryDrain(
   return batterySummaries;
 }
 
+function applySolarGeneration(
+  modules: ModuleIndex,
+  batteryIds: string[],
+  irradianceWPerM2: number,
+): SolarTickSummary {
+  const solarMultiplier = irradianceWPerM2 / 900;
+  const solarEfficiency = 0.5;
+  const arraysUsed: SolarTickArraySummary[] = [];
+  let totalGeneratedEnergyKwh = 0;
+
+  for (const [moduleId, moduleRecord] of Object.entries(modules).sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    if (!isSmallSolarArrayModule(moduleRecord) || !isSolarGeneratingStatus(moduleRecord)) {
+      continue;
+    }
+
+    const powerGenerationKw = getSolarArrayGenerationKw(moduleRecord);
+    const generatedEnergyKwh =
+      powerGenerationKw * solarMultiplier * solarEfficiency / 3600;
+
+    arraysUsed.push({
+      moduleId,
+      generatedEnergyKwh,
+    });
+    totalGeneratedEnergyKwh += generatedEnergyKwh;
+  }
+
+  let remainingGeneratedEnergyKwh = totalGeneratedEnergyKwh;
+
+  for (const batteryId of batteryIds) {
+    if (remainingGeneratedEnergyKwh <= 0) {
+      break;
+    }
+
+    const batteryRecord = modules[batteryId];
+    if (!isBatteryChargeable(batteryRecord)) {
+      continue;
+    }
+
+    const currentEnergyKwh = getBatteryStoredEnergyKw(batteryRecord);
+    const storageCapacityKwh = getBatteryStorageCapacityKwh(batteryRecord);
+    const availableCapacityKwh = Math.max(0, storageCapacityKwh - currentEnergyKwh);
+    const chargedEnergyKwh = Math.min(availableCapacityKwh, remainingGeneratedEnergyKwh);
+
+    setBatteryStoredEnergyKw(batteryRecord, currentEnergyKwh + chargedEnergyKwh);
+    remainingGeneratedEnergyKwh -= chargedEnergyKwh;
+  }
+
+  return {
+    irradianceWPerM2,
+    totalGeneratedEnergyKwh,
+    discardedEnergyKwh: remainingGeneratedEnergyKwh,
+    arraysUsed,
+  };
+}
+
 function runSinglePowerTick(modules: ModuleIndex): {
+  modules: ModuleIndex;
+  summary: PowerTickSummary;
+} {
+  return runSinglePowerTickWithSolar(modules, 0);
+}
+
+function runSinglePowerTickWithSolar(
+  modules: ModuleIndex,
+  irradianceWPerM2: number,
+): {
   modules: ModuleIndex;
   summary: PowerTickSummary;
 } {
   const nextModules = sanitizeModules(cloneModules(modules));
   const batteryIds = getBatteryIds(nextModules);
+  const solar = applySolarGeneration(nextModules, batteryIds, irradianceWPerM2);
   const totalAvailableEnergyKwh = batteryIds.reduce((total, batteryId) => {
     return total + getBatteryStoredEnergyKw(nextModules[batteryId]);
   }, 0);
@@ -1102,6 +1220,7 @@ function runSinglePowerTick(modules: ModuleIndex): {
       energyShortfallKwh: totalEnergyDemandKwh - totalEnergyAllocatedKwh,
       batteriesUsed: batterySummaries,
       forcedOfflineModuleIds,
+      solar,
     },
   };
 }
@@ -1116,6 +1235,7 @@ export function runPowerTick(modules: ModuleIndex): {
 export function runPowerTicks(
   modules: ModuleIndex,
   tickCount: number,
+  irradianceWPerM2 = 0,
 ): {
   modules: ModuleIndex;
   summary: PowerTickRunSummary;
@@ -1131,14 +1251,19 @@ export function runPowerTicks(
   let energyShortfallKwh = 0;
   const batterySummaryById = new Map<string, PowerTickBatterySummary>();
   const forcedOfflineModuleIds = new Set<string>();
+  const solarArraySummaryById = new Map<string, SolarTickArraySummary>();
+  let totalGeneratedEnergyKwh = 0;
+  let discardedEnergyKwh = 0;
 
   for (let index = 0; index < tickCount; index += 1) {
-    const result = runSinglePowerTick(nextModules);
+    const result = runSinglePowerTickWithSolar(nextModules, irradianceWPerM2);
     nextModules = result.modules;
     totalPowerDrawKw += result.summary.totalPowerDrawKw;
     totalEnergyDemandKwh += result.summary.totalEnergyDemandKwh;
     totalEnergyDrainedKwh += result.summary.totalEnergyDrainedKwh;
     energyShortfallKwh += result.summary.energyShortfallKwh;
+    totalGeneratedEnergyKwh += result.summary.solar.totalGeneratedEnergyKwh;
+    discardedEnergyKwh += result.summary.solar.discardedEnergyKwh;
     for (const moduleId of result.summary.forcedOfflineModuleIds) {
       forcedOfflineModuleIds.add(moduleId);
     }
@@ -1150,6 +1275,15 @@ export function runPowerTicks(
           (batterySummaryById.get(batterySummary.moduleId)?.drainedEnergyKwh ?? 0) +
           batterySummary.drainedEnergyKwh,
         remainingEnergyKwh: batterySummary.remainingEnergyKwh,
+      });
+    }
+
+    for (const arraySummary of result.summary.solar.arraysUsed) {
+      solarArraySummaryById.set(arraySummary.moduleId, {
+        moduleId: arraySummary.moduleId,
+        generatedEnergyKwh:
+          (solarArraySummaryById.get(arraySummary.moduleId)?.generatedEnergyKwh ?? 0) +
+          arraySummary.generatedEnergyKwh,
       });
     }
   }
@@ -1168,6 +1302,14 @@ export function runPowerTicks(
       forcedOfflineModuleIds: [...forcedOfflineModuleIds].sort((left, right) =>
         left.localeCompare(right),
       ),
+      solar: {
+        irradianceWPerM2,
+        totalGeneratedEnergyKwh,
+        discardedEnergyKwh,
+        arraysUsed: [...solarArraySummaryById.values()].sort((left, right) =>
+          left.moduleId.localeCompare(right.moduleId),
+        ),
+      },
     },
   };
 }

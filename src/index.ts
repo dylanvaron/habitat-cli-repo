@@ -7,6 +7,7 @@ import { registerConstructCommands } from "./commands/construct";
 import { registerHabitatCommands } from "./commands/habitat";
 import { registerModuleCommands } from "./commands/module";
 import { registerResourceCommands } from "./commands/resource";
+import { registerSolarCommands } from "./commands/solar";
 import { getHabitatDirPath } from "./state";
 
 const program = new Command();
@@ -24,6 +25,7 @@ Examples:
   habitat status
   habitat tick 1
   habitat catalog blueprints list
+  habitat solar status
   habitat resource list
   habitat resource give water 50
   habitat construct --blueprint-id greenhouse --name "Greenhouse Alpha"
@@ -41,6 +43,7 @@ registerHabitatCommands(program);
 registerCatalogCommands(program);
 registerConstructCommands(program);
 registerResourceCommands(program);
+registerSolarCommands(program);
 registerModuleCommands(program);
 
 program.action(() => {

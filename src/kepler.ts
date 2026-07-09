@@ -4,6 +4,7 @@ import type {
   HabitatResponse,
   ResourceCatalogResponse,
   RegistrationResponse,
+  SolarIrradianceResponse,
 } from "./state";
 
 export function getBaseUrl(): string {
@@ -127,4 +128,8 @@ export async function listOfficialResources(
     "GET",
     buildRequestPath("/catalog/resources", { version }),
   );
+}
+
+export async function getWorldSolarIrradiance(): Promise<SolarIrradianceResponse> {
+  return keplerRequest<SolarIrradianceResponse>("GET", "/world/solar-irradiance");
 }
