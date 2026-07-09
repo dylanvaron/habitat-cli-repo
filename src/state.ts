@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -6,11 +7,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const workspaceRoot = path.resolve(__dirname, "..");
 const habitatDirPath = path.join(workspaceRoot, ".habitat");
+const databaseFilePath = path.join(habitatDirPath, "habitat.db");
 const registrationFilePath = path.join(habitatDirPath, "registration.json");
 const blueprintsFilePath = path.join(habitatDirPath, "blueprints.json");
 const modulesFilePath = path.join(habitatDirPath, "modules.json");
 const resourcesFilePath = path.join(habitatDirPath, "resources.json");
 const buildsFilePath = path.join(habitatDirPath, "builds.json");
+const legacyJsonFilePaths = [
+  registrationFilePath,
+  blueprintsFilePath,
+  modulesFilePath,
+  resourcesFilePath,
+  buildsFilePath,
+] as const;
 
 export type RegistrationResponse = {
   habitatId: string;
@@ -222,7 +231,7 @@ function ensureHabitatDir(): void {
   mkdirSync(habitatDirPath, { recursive: true });
 }
 
-function readJsonFile<T>(filePath: string): T | null {
+function readLegacyJsonFile<T>(filePath: string): T | null {
   if (!existsSync(filePath)) {
     return null;
   }
@@ -230,52 +239,139 @@ function readJsonFile<T>(filePath: string): T | null {
   return JSON.parse(readFileSync(filePath, "utf8")) as T;
 }
 
-function writeJsonFile(filePath: string, value: unknown): void {
+let database: Database | null = null;
+
+function getDatabase(): Database {
+  if (database) {
+    return database;
+  }
+
   ensureHabitatDir();
-  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  database = new Database(databaseFilePath);
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS state_entries (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+  migrateLegacyJsonState(database);
+  pruneLegacyJsonFiles();
+  return database;
+}
+
+function migrateLegacyJsonState(db: Database): void {
+  if (existsSync(databaseFilePath)) {
+    const existingRow = db
+      .query("SELECT 1 FROM state_entries LIMIT 1")
+      .get() as { 1: number } | undefined;
+
+    if (existingRow) {
+      return;
+    }
+  }
+
+  const legacyStateEntries = [
+    ["registration", readLegacyJsonFile<LocalRegistration>(registrationFilePath)],
+    ["blueprints", readLegacyJsonFile<BlueprintIndex>(blueprintsFilePath)],
+    ["modules", readLegacyJsonFile<ModuleIndex>(modulesFilePath)],
+    ["resources", readLegacyJsonFile<ResourceInventory>(resourcesFilePath)],
+    ["builds", readLegacyJsonFile<BuildIndex>(buildsFilePath)],
+  ] as const;
+
+  const insertEntry = db.query(
+    "INSERT OR REPLACE INTO state_entries (key, value) VALUES (?, ?)",
+  );
+
+  let migratedAnyEntry = false;
+
+  for (const [key, value] of legacyStateEntries) {
+    if (value === null) {
+      continue;
+    }
+
+    insertEntry.run(key, JSON.stringify(value));
+    migratedAnyEntry = true;
+  }
+
+  if (migratedAnyEntry) {
+    return;
+  }
+}
+
+function pruneLegacyJsonFiles(): void {
+  for (const filePath of legacyJsonFilePaths) {
+    if (!existsSync(filePath)) {
+      continue;
+    }
+
+    unlinkSync(filePath);
+  }
+}
+
+function loadStateEntry<T>(key: string): T | null {
+  const row = getDatabase()
+    .query("SELECT value FROM state_entries WHERE key = ?")
+    .get(key) as { value: string } | undefined;
+
+  if (!row) {
+    return null;
+  }
+
+  return JSON.parse(row.value) as T;
+}
+
+function saveStateEntry(key: string, value: unknown): void {
+  getDatabase()
+    .query("INSERT OR REPLACE INTO state_entries (key, value) VALUES (?, ?)")
+    .run(key, JSON.stringify(value));
 }
 
 export function loadRegistration(): LocalRegistration | null {
-  return readJsonFile<LocalRegistration>(registrationFilePath);
+  return loadStateEntry<LocalRegistration>("registration");
 }
 
 export function saveRegistration(registration: LocalRegistration): void {
-  writeJsonFile(registrationFilePath, registration);
+  saveStateEntry("registration", registration);
 }
 
 export function loadBlueprints(): BlueprintIndex {
-  return readJsonFile<BlueprintIndex>(blueprintsFilePath) ?? {};
+  return loadStateEntry<BlueprintIndex>("blueprints") ?? {};
 }
 
 export function saveBlueprints(blueprints: BlueprintIndex): void {
-  writeJsonFile(blueprintsFilePath, blueprints);
+  saveStateEntry("blueprints", blueprints);
 }
 
 export function loadModules(): ModuleIndex {
-  return sanitizeModules(readJsonFile<ModuleIndex>(modulesFilePath) ?? {});
+  return sanitizeModules(loadStateEntry<ModuleIndex>("modules") ?? {});
 }
 
 export function saveModules(modules: ModuleIndex): void {
-  writeJsonFile(modulesFilePath, sanitizeModules(modules));
+  saveStateEntry("modules", sanitizeModules(modules));
 }
 
 export function loadResourceInventory(): ResourceInventory {
-  return readJsonFile<ResourceInventory>(resourcesFilePath) ?? {};
+  return loadStateEntry<ResourceInventory>("resources") ?? {};
 }
 
 export function saveResourceInventory(resourceInventory: ResourceInventory): void {
-  writeJsonFile(resourcesFilePath, resourceInventory);
+  saveStateEntry("resources", resourceInventory);
 }
 
 export function loadBuilds(): BuildIndex {
-  return readJsonFile<BuildIndex>(buildsFilePath) ?? {};
+  return loadStateEntry<BuildIndex>("builds") ?? {};
 }
 
 export function saveBuilds(builds: BuildIndex): void {
-  writeJsonFile(buildsFilePath, builds);
+  saveStateEntry("builds", builds);
 }
 
 export function deleteAllLocalState(): void {
+  if (database) {
+    database.close(false);
+    database = null;
+  }
+
   if (existsSync(habitatDirPath)) {
     rmSync(habitatDirPath, { recursive: true, force: true });
   }
