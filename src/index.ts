@@ -3,6 +3,7 @@
 import { Command } from "commander";
 import packageJson from "../package.json";
 import { registerCatalogCommands } from "./commands/catalog";
+import { registerConstructCommands } from "./commands/construct";
 import { registerHabitatCommands } from "./commands/habitat";
 import { registerModuleCommands } from "./commands/module";
 import { registerResourceCommands } from "./commands/resource";
@@ -24,6 +25,8 @@ Examples:
   habitat tick 1
   habitat catalog blueprints list
   habitat resource list
+  habitat resource give water 50
+  habitat construct --blueprint-id greenhouse --name "Greenhouse Alpha"
   habitat unregister
   habitat module list
 
@@ -36,6 +39,7 @@ Notes:
 
 registerHabitatCommands(program);
 registerCatalogCommands(program);
+registerConstructCommands(program);
 registerResourceCommands(program);
 registerModuleCommands(program);
 

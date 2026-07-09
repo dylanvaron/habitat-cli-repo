@@ -7,11 +7,16 @@ import {
 } from "../kepler";
 import { printLocalRegistration, printRemoteHabitat } from "../output";
 import {
+  advanceBuildQueue,
+  cancelBuildsForForcedOfflineModules,
   deleteAllLocalState,
   hydrateModulesFromStarterModules,
   indexBlueprints,
+  loadBlueprints,
+  loadBuilds,
   loadModules,
   loadRegistration,
+  saveBuilds,
   runPowerTicks,
   saveBlueprints,
   saveModules,
@@ -80,24 +85,74 @@ export function registerHabitatCommands(program: Command): void {
       }
 
       const modules = loadModules();
-      const { modules: nextModules, summary } = runPowerTicks(modules, tickCount);
+      const builds = loadBuilds();
+      const blueprints = loadBlueprints();
+      const { modules: powerTickModules, summary } = runPowerTicks(modules, tickCount);
+      const {
+        modules: postCancellationModules,
+        builds: postCancellationBuilds,
+        canceledBuilds,
+      } = cancelBuildsForForcedOfflineModules(
+        powerTickModules,
+        builds,
+        summary.forcedOfflineModuleIds,
+      );
+      const {
+        modules: nextModules,
+        builds: nextBuilds,
+        summary: buildSummary,
+      } = advanceBuildQueue(postCancellationModules, postCancellationBuilds, blueprints, tickCount);
 
       saveModules(nextModules);
+      saveBuilds(nextBuilds);
 
       console.log(`Advanced ${summary.tickCount} tick(s).`);
-      console.log(`Total power demand: ${summary.totalDemandKw} kW`);
-      console.log(`Power drained: ${summary.totalDrainedKw} kW`);
-      console.log(`Shortfall: ${summary.shortfallKw} kW`);
+      console.log(`Average power draw: ${summary.averagePowerDrawKw} kW`);
+      console.log(`Total energy demand: ${summary.totalEnergyDemandKwh} kWh`);
+      console.log(`Energy drained: ${summary.totalEnergyDrainedKwh} kWh`);
+      console.log(`Energy shortfall: ${summary.energyShortfallKwh} kWh`);
 
       if (summary.batteriesUsed.length > 0) {
         console.log("Battery drain:");
         for (const batterySummary of summary.batteriesUsed) {
           console.log(
-            `- ${batterySummary.moduleId}: drained ${batterySummary.drainedKw} kW, remaining ${batterySummary.remainingChargeKw} kW`,
+            `- ${batterySummary.moduleId}: drained ${batterySummary.drainedEnergyKwh} kWh, remaining ${batterySummary.remainingEnergyKwh} kWh`,
           );
         }
       } else {
         console.log("No batteries were available to drain.");
+      }
+
+      if (summary.forcedOfflineModuleIds.length > 0) {
+        console.log("Forced offline:");
+        for (const moduleId of summary.forcedOfflineModuleIds) {
+          console.log(`- ${moduleId}`);
+        }
+      } else {
+        console.log("No modules were forced offline.");
+      }
+
+      if (canceledBuilds.length > 0) {
+        console.log("Canceled builds:");
+        for (const canceledBuild of canceledBuilds) {
+          console.log(
+            `- ${canceledBuild.buildId} (${canceledBuild.displayName}): ${canceledBuild.reason}`,
+          );
+        }
+      } else {
+        console.log("No builds were canceled.");
+      }
+
+      console.log(`Queued builds advanced: ${buildSummary.advancedBuilds}`);
+      if (buildSummary.completedBuilds.length > 0) {
+        console.log("Completed builds:");
+        for (const completedBuild of buildSummary.completedBuilds) {
+          console.log(
+            `- ${completedBuild.buildId}: completed as ${completedBuild.moduleId} (${completedBuild.displayName})`,
+          );
+        }
+      } else {
+        console.log("No queued builds completed.");
       }
     });
 
@@ -115,6 +170,7 @@ export function registerHabitatCommands(program: Command): void {
 
       printLocalRegistration(registration);
       console.log(`Local modules: ${Object.keys(loadModules()).length}`);
+      console.log(`Queued builds: ${Object.keys(loadBuilds()).length}`);
       console.log("");
 
       const response = await getHabitatRegistrationRequest(

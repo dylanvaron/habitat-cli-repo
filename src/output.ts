@@ -1,4 +1,10 @@
-import { getModulePowerDrawKw, type HabitatRecord, type LocalModule, type LocalRegistration } from "./state";
+import {
+  getModulePowerDrawKw,
+  type HabitatRecord,
+  type LocalBuild,
+  type LocalModule,
+  type LocalRegistration,
+} from "./state";
 
 export function printLocalRegistration(registration: LocalRegistration): void {
   console.log("Local registration");
@@ -21,6 +27,10 @@ export function printRemoteHabitat(habitat: HabitatRecord): void {
 
 export function printModule(moduleRecord: LocalModule): void {
   console.log(JSON.stringify(moduleRecord, null, 2));
+}
+
+export function printBuild(buildRecord: LocalBuild): void {
+  console.log(JSON.stringify(buildRecord, null, 2));
 }
 
 export function printModuleStatusTable(modules: LocalModule[]): void {

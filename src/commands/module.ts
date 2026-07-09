@@ -126,7 +126,7 @@ Examples:
 
   moduleCommand
     .command("create")
-    .description("Create a local Habitat module from a cached blueprint.")
+    .description("Directly create a local Habitat module from a cached blueprint.")
     .requiredOption("--blueprint-id <blueprintId>", "Blueprint ID")
     .requiredOption("--name <name>", "Module display name")
     .action((options: { blueprintId: string; name: string }) => {
@@ -156,8 +156,6 @@ Examples:
     .option("--name <name>", "Update the module display name")
     .option("--status <status>", "Set runtimeAttributes.status")
     .option("--set-runtime <key=value>", "Set one runtime attribute", collectValues, [])
-    .option("--connect-to <moduleId>", "Add a module connection", collectValues, [])
-    .option("--disconnect-from <moduleId>", "Remove a module connection", collectValues, [])
     .action(
       (
         moduleId: string,
@@ -165,8 +163,6 @@ Examples:
           name?: string;
           status?: string;
           setRuntime: string[];
-          connectTo: string[];
-          disconnectFrom: string[];
         },
       ) => {
         const modules = loadModules();
@@ -194,30 +190,6 @@ Examples:
           const { key, value } = parseRuntimeAssignment(assignment);
           moduleRecord.runtimeAttributes[key] = value;
           hasChanges = true;
-        }
-
-        for (const connectedModuleId of options.connectTo) {
-          if (!modules[connectedModuleId]) {
-            console.log(`Cannot connect to missing module "${connectedModuleId}".`);
-            process.exitCode = 1;
-            return;
-          }
-
-          if (!moduleRecord.connectedTo.includes(connectedModuleId)) {
-            moduleRecord.connectedTo.push(connectedModuleId);
-            hasChanges = true;
-          }
-        }
-
-        for (const disconnectedModuleId of options.disconnectFrom) {
-          const nextConnections = moduleRecord.connectedTo.filter(
-            (connectedModuleId) => connectedModuleId !== disconnectedModuleId,
-          );
-
-          if (nextConnections.length !== moduleRecord.connectedTo.length) {
-            moduleRecord.connectedTo = nextConnections;
-            hasChanges = true;
-          }
         }
 
         if (!hasChanges) {

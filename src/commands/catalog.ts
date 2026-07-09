@@ -10,22 +10,32 @@ export function registerCatalogCommands(program: Command): void {
     .command("blueprints")
     .description("List and inspect official Kepler production blueprints.");
 
-  catalogBlueprintsCommand.addHelpText(
+  registerBlueprintCommands(catalogBlueprintsCommand, "habitat catalog blueprints");
+
+  const blueprintCommand = program
+    .command("blueprints")
+    .description("List and inspect official Kepler production blueprints.");
+
+  registerBlueprintCommands(blueprintCommand, "habitat blueprints");
+}
+
+function registerBlueprintCommands(command: Command, commandPath: string): void {
+  command.addHelpText(
     "after",
     `
 Examples:
-  habitat catalog blueprints list
-  habitat catalog blueprints list --version 2026-06-24
-  habitat catalog blueprints show survey-rover
-  habitat catalog blueprints show rover-bay-upgrade --version 2026-06-24
+  ${commandPath} list
+  ${commandPath} list --version 2026-06-24
+  ${commandPath} show survey-rover
+  ${commandPath} show rover-bay-upgrade --version 2026-06-24
 `,
   );
 
-  catalogBlueprintsCommand.action(() => {
-    catalogBlueprintsCommand.outputHelp();
+  command.action(() => {
+    command.outputHelp();
   });
 
-  catalogBlueprintsCommand
+  command
     .command("list")
     .description("List official Kepler production blueprints.")
     .option("--version <catalogVersion>", "Optional catalog version")
@@ -40,7 +50,7 @@ Examples:
       console.log(`Catalog version: ${response.catalogVersion}`);
     });
 
-  catalogBlueprintsCommand
+  command
     .command("show")
     .description("Show one official Kepler production blueprint.")
     .argument("<blueprintId>", "Blueprint ID")
