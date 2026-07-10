@@ -6,6 +6,7 @@ import type {
   RegistrationResponse,
   SolarIrradianceResponse,
 } from "./state";
+import { getRequestPathLabel, logEvent } from "./logging";
 
 export function getBaseUrl(): string {
   const rawBaseUrl =
@@ -54,7 +55,11 @@ export async function keplerRequest<T>(
   baseUrlOverride?: string,
   body?: unknown,
 ): Promise<T> {
-  const response = await fetch(`${baseUrlOverride ?? getBaseUrl()}${requestPath}`, {
+  const requestUrl = `${baseUrlOverride ?? getBaseUrl()}${requestPath}`;
+  const path = getRequestPathLabel(requestPath);
+  logEvent("kepler", `${method} ${path} -> request`);
+
+  const response = await fetch(requestUrl, {
     method,
     headers: {
       Authorization: `Bearer ${getToken()}`,
@@ -62,6 +67,7 @@ export async function keplerRequest<T>(
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  logEvent("kepler", `${method} ${path} -> ${response.status}`);
 
   if (!response.ok) {
     const errorText = await response.text();

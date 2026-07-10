@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getWorldSolarIrradiance } from "../kepler";
+import { getSolarStatus } from "../api";
 
 function describeSolarCondition(condition: string): string {
   switch (condition) {
@@ -34,7 +34,7 @@ Examples:
     .description("Show the current solar irradiance and sunlight condition.")
     .action(async () => {
       try {
-        const response = await getWorldSolarIrradiance();
+        const response = await getSolarStatus();
         const { wPerM2, condition } = response.solarIrradiance;
 
         console.log(`Current solar condition: ${condition}`);

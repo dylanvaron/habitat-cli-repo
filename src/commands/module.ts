@@ -1,16 +1,17 @@
 import { Command } from "commander";
+import {
+  createModule,
+  deleteModule,
+  getModule,
+  listModules,
+  setModuleStatus,
+  updateModule,
+} from "../api";
 import { printModule, printModuleStatusTable } from "../output";
 import {
-  createLocalModule,
-  disconnectDeletedModule,
   getModulePowerDrawKw,
   isModuleRuntimeStatus,
-  loadBlueprints,
-  loadModules,
   parseRuntimeAssignment,
-  saveModules,
-  setModuleRuntimeStatus,
-  type ModuleIndex,
 } from "../state";
 
 function collectValues(value: string, previous: string[] = []): string[] {
@@ -44,9 +45,9 @@ Examples:
   moduleCommand
     .command("list")
     .description("List all local Habitat modules.")
-    .action(() => {
-      const modules = loadModules();
-      const moduleRecords = Object.values(modules);
+    .action(async () => {
+      const response = await listModules();
+      const moduleRecords = response.modules;
 
       if (moduleRecords.length === 0) {
         console.log("No local modules found.");
@@ -66,8 +67,8 @@ Examples:
   moduleCommand
     .command("status")
     .description("Show each module's current state and power draw.")
-    .action(() => {
-      const modules = Object.values(loadModules());
+    .action(async () => {
+      const modules = (await listModules()).modules;
 
       if (modules.length === 0) {
         console.log("No local modules found.");
@@ -82,7 +83,7 @@ Examples:
     .description("Change a local module's runtime status.")
     .argument("<moduleId>", "Module ID")
     .argument("<status>", "New runtime status: offline, idle, online, active, or damaged")
-    .action((moduleId: string, status: string) => {
+    .action(async (moduleId: string, status: string) => {
       if (!isModuleRuntimeStatus(status)) {
         console.log(
           `Invalid status "${status}". Use one of: offline, idle, online, active, damaged.`,
@@ -91,11 +92,9 @@ Examples:
         return;
       }
 
-      const modules = loadModules();
-
       try {
-        const moduleRecord = setModuleRuntimeStatus(modules, moduleId, status);
-        saveModules(modules);
+        const response = await setModuleStatus(moduleId, status);
+        const moduleRecord = response.module;
 
         const powerDrawKw = getModulePowerDrawKw(moduleRecord);
         console.log(
@@ -112,16 +111,15 @@ Examples:
     .command("show")
     .description("Show one local Habitat module.")
     .argument("<moduleId>", "Module ID")
-    .action((moduleId: string) => {
-      const moduleRecord = loadModules()[moduleId];
-
-      if (!moduleRecord) {
-        console.log(`No local module named "${moduleId}" was found.`);
+    .action(async (moduleId: string) => {
+      try {
+        const response = await getModule(moduleId);
+        printModule(response.module);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.log(message);
         process.exitCode = 1;
-        return;
       }
-
-      printModule(moduleRecord);
     });
 
   moduleCommand
@@ -129,24 +127,16 @@ Examples:
     .description("Directly create a local Habitat module from a cached blueprint.")
     .requiredOption("--blueprint-id <blueprintId>", "Blueprint ID")
     .requiredOption("--name <name>", "Module display name")
-    .action((options: { blueprintId: string; name: string }) => {
-      const blueprints = loadBlueprints();
-
-      if (!blueprints[options.blueprintId]) {
-        console.log(
-          `No cached blueprint named "${options.blueprintId}" was found. Register first or use a cached blueprint ID.`,
-        );
+    .action(async (options: { blueprintId: string; name: string }) => {
+      try {
+        const response = await createModule(options.blueprintId, options.name);
+        console.log(`Created local module "${response.module.displayName}".`);
+        printModule(response.module);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.log(message);
         process.exitCode = 1;
-        return;
       }
-
-      const modules = loadModules();
-      const moduleRecord = createLocalModule(modules, blueprints, options.blueprintId, options.name);
-      modules[moduleRecord.id] = moduleRecord;
-      saveModules(modules);
-
-      console.log(`Created local module "${moduleRecord.displayName}".`);
-      printModule(moduleRecord);
     });
 
   moduleCommand
@@ -156,68 +146,68 @@ Examples:
     .option("--name <name>", "Update the module display name")
     .option("--status <status>", "Set runtimeAttributes.status")
     .option("--set-runtime <key=value>", "Set one runtime attribute", collectValues, [])
-    .action(
-      (
-        moduleId: string,
-        options: {
-          name?: string;
-          status?: string;
-          setRuntime: string[];
-        },
-      ) => {
-        const modules = loadModules();
-        const moduleRecord = modules[moduleId];
-
-        if (!moduleRecord) {
-          console.log(`No local module named "${moduleId}" was found.`);
-          process.exitCode = 1;
-          return;
-        }
-
-        let hasChanges = false;
-
-        if (typeof options.name === "string") {
-          moduleRecord.displayName = options.name;
-          hasChanges = true;
-        }
-
-        if (typeof options.status === "string") {
-          moduleRecord.runtimeAttributes.status = options.status;
-          hasChanges = true;
-        }
-
-        for (const assignment of options.setRuntime) {
-          const { key, value } = parseRuntimeAssignment(assignment);
-          moduleRecord.runtimeAttributes[key] = value;
-          hasChanges = true;
-        }
-
-        if (!hasChanges) {
-          console.log("No updates were provided.");
-          return;
-        }
-
-        saveModules(modules as ModuleIndex);
-        console.log(`Updated local module "${moduleRecord.id}".`);
-        printModule(moduleRecord);
+    .action(async (
+      moduleId: string,
+      options: {
+        name?: string;
+        status?: string;
+        setRuntime: string[];
       },
-    );
+    ) => {
+        try {
+          const runtimeAttributes: Record<string, unknown> = {};
+          let hasChanges = false;
+          let displayName: string | undefined;
+          let status: string | undefined;
+
+          if (typeof options.name === "string") {
+            displayName = options.name;
+            hasChanges = true;
+          }
+
+          if (typeof options.status === "string") {
+            status = options.status;
+            hasChanges = true;
+          }
+
+          for (const assignment of options.setRuntime) {
+            const { key, value } = parseRuntimeAssignment(assignment);
+            runtimeAttributes[key] = value;
+            hasChanges = true;
+          }
+
+          if (!hasChanges) {
+            console.log("No updates were provided.");
+            return;
+          }
+
+          const response = await updateModule(moduleId, {
+            displayName,
+            status,
+            runtimeAttributes:
+              Object.keys(runtimeAttributes).length > 0 ? runtimeAttributes : undefined,
+          });
+          console.log(`Updated local module "${response.module.id}".`);
+          printModule(response.module);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.log(message);
+          process.exitCode = 1;
+        }
+      });
 
   moduleCommand
     .command("delete")
     .description("Delete a local Habitat module.")
     .argument("<moduleId>", "Module ID")
-    .action((moduleId: string) => {
-      const modules = loadModules();
-
-      if (!modules[moduleId]) {
-        console.log(`No local module named "${moduleId}" was found.`);
+    .action(async (moduleId: string) => {
+      try {
+        await deleteModule(moduleId);
+        console.log(`Deleted local module "${moduleId}".`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.log(message);
         process.exitCode = 1;
-        return;
       }
-
-      const nextModules = disconnectDeletedModule(modules, moduleId);
-      saveModules(nextModules);
-      console.log(`Deleted local module "${moduleId}".`);
     });
 }

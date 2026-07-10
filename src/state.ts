@@ -377,6 +377,15 @@ export function deleteAllLocalState(): void {
   }
 }
 
+export function resetStateDatabaseConnection(): void {
+  if (!database) {
+    return;
+  }
+
+  database.close(false);
+  database = null;
+}
+
 export function indexBlueprints(blueprints: ProductionBlueprint[]): BlueprintIndex {
   const indexedBlueprints: BlueprintIndex = {};
 

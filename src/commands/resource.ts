@@ -1,6 +1,5 @@
 import { Command } from "commander";
-import { listOfficialResources } from "../kepler";
-import { addResourceToInventory, loadResourceInventory, saveResourceInventory } from "../state";
+import { addInventoryResource, getInventory, listCatalogResources } from "../api";
 
 export function registerResourceCommands(program: Command): void {
   const resourceCommand = program
@@ -27,7 +26,7 @@ Examples:
     .description("List official Kepler resource catalog entries.")
     .option("--version <catalogVersion>", "Optional catalog version")
     .action(async (options: { version?: string }) => {
-      const response = await listOfficialResources(options.version);
+      const response = await listCatalogResources(options.version);
 
       console.log(`Official resources (${response.resources.length}):`);
       for (const resource of response.resources) {
@@ -45,15 +44,13 @@ Examples:
     .description("Add a quantity of one resource to the local Habitat resource store.")
     .argument("<resourceType>", "Resource type")
     .argument("<amount>", "Amount to add")
-    .action((resourceType: string, amount: string) => {
+    .action(async (resourceType: string, amount: string) => {
       const numericAmount = Number(amount);
 
       try {
-        const resourceInventory = loadResourceInventory();
-        const nextInventory = addResourceToInventory(resourceInventory, resourceType, numericAmount);
-        saveResourceInventory(nextInventory);
+        const response = await addInventoryResource(resourceType, numericAmount);
         console.log(
-          `Added ${numericAmount} ${resourceType}. New total: ${nextInventory[resourceType]} ${resourceType}.`,
+          `Added ${numericAmount} ${resourceType}. New total: ${response.inventory[resourceType]} ${resourceType}.`,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -65,8 +62,8 @@ Examples:
   resourceCommand
     .command("show")
     .description("Show all locally tracked Habitat resources and quantities.")
-    .action(() => {
-      const resourceInventory = loadResourceInventory();
+    .action(async () => {
+      const resourceInventory = (await getInventory()).inventory;
       const resources = Object.entries(resourceInventory).sort(([left], [right]) =>
         left.localeCompare(right),
       );

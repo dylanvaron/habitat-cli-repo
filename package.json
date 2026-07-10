@@ -9,9 +9,11 @@
   "scripts": {
     "habitat": "bun run src/index.ts",
     "dev": "bun run src/index.ts",
+    "server": "bun run src/server.ts",
     "start": "bun run src/index.ts"
   },
   "dependencies": {
-    "commander": "^14.0.0"
+    "commander": "^14.0.0",
+    "hono": "^4.12.29"
   }
 }

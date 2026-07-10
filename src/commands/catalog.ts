@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getOfficialBlueprint, listOfficialBlueprints } from "../kepler";
+import { getCatalogBlueprint, listCatalogBlueprints } from "../api";
 
 export function registerCatalogCommands(program: Command): void {
   const catalogCommand = program
@@ -40,7 +40,7 @@ Examples:
     .description("List official Kepler production blueprints.")
     .option("--version <catalogVersion>", "Optional catalog version")
     .action(async (options: { version?: string }) => {
-      const response = await listOfficialBlueprints(options.version);
+      const response = await listCatalogBlueprints(options.version);
 
       console.log(`Official blueprints (${response.blueprints.length}):`);
       for (const blueprint of response.blueprints) {
@@ -57,12 +57,12 @@ Examples:
     .option("--version <catalogVersion>", "Optional catalog version")
     .action(async (blueprintId: string, options: { version?: string }) => {
       try {
-        const response = await getOfficialBlueprint(blueprintId, options.version);
+        const response = await getCatalogBlueprint(blueprintId, options.version);
         console.log(JSON.stringify(response.blueprint, null, 2));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
 
-        if (message.includes("404")) {
+        if (message.includes("Blueprint not found") || message.includes("404")) {
           console.log(`No official blueprint named "${blueprintId}" was found.`);
           process.exitCode = 1;
           return;

@@ -1,23 +1,6 @@
 import { Command } from "commander";
+import { cancelBuild, createBuild, getBuild, listBuilds } from "../api";
 import { printBuild } from "../output";
-import {
-  assignBuildFacility,
-  cancelLocalBuild,
-  createLocalBuild,
-  validateBuildFacilityAvailability,
-  loadBuilds,
-  loadBlueprints,
-  loadModules,
-  loadResourceInventory,
-  saveModules,
-  saveBuilds,
-  saveResourceInventory,
-  spendResourceInventory,
-  synchronizeWorkshopAssignments,
-  validateBlueprintCanBuildAsModule,
-  validateBuildFacilityRequirement,
-  validateSupplyCacheOnline,
-} from "../state";
 
 export function registerConstructCommands(program: Command): void {
   const constructCommand = program
@@ -40,7 +23,7 @@ Examples:
     .option("--blueprint-id <blueprintId>", "Blueprint ID")
     .option("--name <name>", "Module display name")
     .option("--dry-run", "Check whether construction would succeed without changing local files")
-    .action((options: { blueprintId?: string; name?: string; dryRun?: boolean }) => {
+    .action(async (options: { blueprintId?: string; name?: string; dryRun?: boolean }) => {
       try {
         if (!options.blueprintId || !options.name) {
           console.log('Provide both `--blueprint-id` and `--name` to queue construction.');
@@ -49,19 +32,13 @@ Examples:
           return;
         }
 
-        const blueprints = loadBlueprints();
-        const blueprint = validateBlueprintCanBuildAsModule(blueprints, options.blueprintId);
-        const modules = loadModules();
-        const builds = loadBuilds();
-        synchronizeWorkshopAssignments(modules, builds);
-        validateSupplyCacheOnline(modules);
-        validateBuildFacilityRequirement(modules, blueprint);
-        validateBuildFacilityAvailability(modules, builds, blueprint);
-
-        const resourceInventory = loadResourceInventory();
-        const nextInventory = spendResourceInventory(resourceInventory, blueprint.inputs ?? {});
-        const buildRecord = createLocalBuild(builds, blueprint, options.name);
-        const assignedFacilityModuleId = assignBuildFacility(modules, buildRecord);
+        const response = await createBuild(
+          options.blueprintId,
+          options.name,
+          options.dryRun === true,
+        );
+        const buildRecord = response.build;
+        const assignedFacilityModuleId = response.assignedFacilityModuleId;
 
         if (options.dryRun) {
           console.log(
@@ -83,7 +60,7 @@ Examples:
             console.log("No local resources would be required for this build.");
           }
 
-          const remainingResources = Object.entries(nextInventory).sort(([left], [right]) =>
+          const remainingResources = Object.entries(response.inventory).sort(([left], [right]) =>
             left.localeCompare(right),
           );
 
@@ -98,11 +75,6 @@ Examples:
 
           return;
         }
-
-        builds[buildRecord.id] = buildRecord;
-        saveModules(modules);
-        saveResourceInventory(nextInventory);
-        saveBuilds(builds);
 
         console.log(
           `Queued build "${buildRecord.id}" for "${buildRecord.displayName}" from blueprint "${buildRecord.blueprintId}".`,
@@ -132,8 +104,8 @@ Examples:
   constructCommand
     .command("list")
     .description("List all queued local module builds.")
-    .action(() => {
-      const builds = Object.values(loadBuilds()).sort((left, right) => left.id.localeCompare(right.id));
+    .action(async () => {
+      const builds = (await listBuilds()).builds;
 
       if (builds.length === 0) {
         console.log("No local module builds are queued.");
@@ -152,27 +124,24 @@ Examples:
     .command("show")
     .description("Show one queued local module build.")
     .argument("<buildId>", "Build ID")
-    .action((buildId: string) => {
-      const buildRecord = loadBuilds()[buildId];
-
-      if (!buildRecord) {
-        console.log(`No local build named "${buildId}" was found.`);
+    .action(async (buildId: string) => {
+      try {
+        const response = await getBuild(buildId);
+        printBuild(response.build);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.log(message);
         process.exitCode = 1;
-        return;
       }
-
-      printBuild(buildRecord);
     });
 
   constructCommand
     .command("cancel")
     .description("Cancel one queued local module build without refunding materials.")
     .argument("<buildId>", "Build ID")
-    .action((buildId: string) => {
+    .action(async (buildId: string) => {
       try {
-        const result = cancelLocalBuild(loadModules(), loadBuilds(), buildId);
-        saveModules(result.modules);
-        saveBuilds(result.builds);
+        const result = await cancelBuild(buildId);
         console.log(
           `Canceled build "${result.canceledBuild.id}" for "${result.canceledBuild.displayName}".`,
         );
