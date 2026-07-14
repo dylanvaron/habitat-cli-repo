@@ -1,18 +1,19 @@
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const workspaceRoot = path.resolve(__dirname, "..");
-const habitatDirPath = path.join(workspaceRoot, ".habitat");
-const databaseFilePath = path.join(habitatDirPath, "habitat.db");
-const registrationFilePath = path.join(habitatDirPath, "registration.json");
-const blueprintsFilePath = path.join(habitatDirPath, "blueprints.json");
-const modulesFilePath = path.join(habitatDirPath, "modules.json");
-const resourcesFilePath = path.join(habitatDirPath, "resources.json");
-const buildsFilePath = path.join(habitatDirPath, "builds.json");
+const databaseFilePath = path.join(workspaceRoot, "habitat.db");
+const legacyHabitatDirPath = path.join(workspaceRoot, ".habitat");
+const legacyDatabaseFilePath = path.join(legacyHabitatDirPath, "habitat.db");
+const registrationFilePath = path.join(legacyHabitatDirPath, "registration.json");
+const blueprintsFilePath = path.join(legacyHabitatDirPath, "blueprints.json");
+const modulesFilePath = path.join(legacyHabitatDirPath, "modules.json");
+const resourcesFilePath = path.join(legacyHabitatDirPath, "resources.json");
+const buildsFilePath = path.join(legacyHabitatDirPath, "builds.json");
 const legacyJsonFilePaths = [
   registrationFilePath,
   blueprintsFilePath,
@@ -227,8 +228,12 @@ export type ModuleRuntimeStatus = (typeof allowedModuleStatuses)[number];
 
 const batteryIdPattern = /battery/i;
 
-function ensureHabitatDir(): void {
-  mkdirSync(habitatDirPath, { recursive: true });
+function migrateLegacyDatabaseFile(): void {
+  if (existsSync(databaseFilePath) || !existsSync(legacyDatabaseFilePath)) {
+    return;
+  }
+
+  renameSync(legacyDatabaseFilePath, databaseFilePath);
 }
 
 function readLegacyJsonFile<T>(filePath: string): T | null {
@@ -246,7 +251,7 @@ function getDatabase(): Database {
     return database;
   }
 
-  ensureHabitatDir();
+  migrateLegacyDatabaseFile();
   database = new Database(databaseFilePath);
   database.exec(`
     CREATE TABLE IF NOT EXISTS state_entries (
@@ -372,8 +377,12 @@ export function deleteAllLocalState(): void {
     database = null;
   }
 
-  if (existsSync(habitatDirPath)) {
-    rmSync(habitatDirPath, { recursive: true, force: true });
+  if (existsSync(databaseFilePath)) {
+    rmSync(databaseFilePath, { force: true });
+  }
+
+  if (existsSync(legacyHabitatDirPath)) {
+    rmSync(legacyHabitatDirPath, { recursive: true, force: true });
   }
 }
 
@@ -1483,6 +1492,6 @@ export function advanceBuildQueue(
   };
 }
 
-export function getHabitatDirPath(): string {
-  return habitatDirPath;
+export function getHabitatDatabasePath(): string {
+  return databaseFilePath;
 }

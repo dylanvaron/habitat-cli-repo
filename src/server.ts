@@ -1,6 +1,6 @@
 import { createServerApp } from "./server/app";
 import { logEvent } from "./logging";
-import { getHabitatDirPath, loadRegistration } from "./state";
+import { getHabitatDatabasePath, loadRegistration } from "./state";
 
 export function getHabitatApiPort(): number {
   const rawPort = process.env.HABITAT_API_PORT ?? "8787";
@@ -25,7 +25,7 @@ export function startHabitatApiServer(): void {
   });
 
   console.log(`Habitat backend listening on http://${hostname}:${port}`);
-  logEvent("habitat-api", `state dir -> ${getHabitatDirPath()}`);
+  logEvent("habitat-api", `state db -> ${getHabitatDatabasePath()}`);
 
   const registration = loadRegistration();
   logEvent(

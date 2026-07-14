@@ -8,7 +8,7 @@ import { registerHabitatCommands } from "./commands/habitat";
 import { registerModuleCommands } from "./commands/module";
 import { registerResourceCommands } from "./commands/resource";
 import { registerSolarCommands } from "./commands/solar";
-import { getHabitatDirPath } from "./state";
+import { getHabitatDatabasePath } from "./state";
 
 const program = new Command();
 
@@ -33,7 +33,7 @@ Examples:
   habitat module list
 
 Notes:
-  Local state is stored in ${getHabitatDirPath()}.
+  Local state is stored in ${getHabitatDatabasePath()}.
   The CLI reads auth from KEPLER_PLANET_TOKEN, KEPLER_WORLD_TOKEN, or PLANET_TOKEN.
   The CLI reads the base URL from KEPLER_BASE_URL, KEPLER_WORLD_BASE_URL, or PLANET_SERVER_PUBLIC_BASE_URL.
 `,
