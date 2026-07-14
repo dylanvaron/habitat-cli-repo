@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { scanResources } from "../api";
+import { listCatalogResources, scanResources } from "../api";
 import { printScanResponse } from "../output";
 
 export function registerScanCommands(program: Command): void {
@@ -20,19 +20,24 @@ export function registerScanCommands(program: Command): void {
         json?: boolean;
       }) => {
         try {
-          const response = await scanResources({
+          const scanOptions = {
             x: Number(options.x),
             y: Number(options.y),
             sensorStrength: Number(options.strength),
             radiusTiles: Number(options.radius),
-          });
+          };
+          const response = await scanResources(scanOptions);
 
           if (options.json) {
             console.log(JSON.stringify(response));
             return;
           }
 
-          printScanResponse(response);
+          const resourceCatalog = await listCatalogResources();
+          printScanResponse(response, {
+            ...scanOptions,
+            officialResources: resourceCatalog.resources,
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           console.log(message);

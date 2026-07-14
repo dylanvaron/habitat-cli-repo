@@ -1,6 +1,7 @@
 import {
   getModulePowerDrawKw,
   type HabitatRecord,
+  type IndustryResource,
   type LocalBuild,
   type LocalModule,
   type LocalRegistration,
@@ -64,6 +65,7 @@ type ScanProbabilityRow = {
   resourceType: string;
   probability: number;
   quantityEstimate: number | null;
+  quantityRange: { min: number; max: number } | null;
 };
 
 type ScanTileSummary = {
@@ -72,7 +74,16 @@ type ScanTileSummary = {
   distance: number | null;
   terrain: string;
   quantityEstimate: number | null;
+  quantityRange: { min: number; max: number } | null;
   probabilities: ScanProbabilityRow[];
+};
+
+type ScanOutputOptions = {
+  x: number;
+  y: number;
+  sensorStrength: number;
+  radiusTiles: number;
+  officialResources: IndustryResource[];
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -92,6 +103,12 @@ function readQuantityEstimate(value: unknown): number | null {
     return null;
   }
 
+  const estimatedKg = readNumber(value.estimatedKg);
+
+  if (estimatedKg !== null) {
+    return estimatedKg;
+  }
+
   const directQuantityEstimate = readNumber(value.quantityEstimate);
 
   if (directQuantityEstimate !== null) {
@@ -105,6 +122,33 @@ function readQuantityEstimate(value: unknown): number | null {
   }
 
   return null;
+}
+
+function readQuantityRange(value: unknown): { min: number; max: number } | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const minimum =
+    readNumber(value.minimumKg) ??
+    readNumber(value.quantityEstimateMin) ??
+    readNumber(value.minimumQuantityEstimate) ??
+    readNumber(value.minimumQuantity) ??
+    readNumber(value.minQuantityEstimate) ??
+    readNumber(value.minQuantity);
+  const maximum =
+    readNumber(value.maximumKg) ??
+    readNumber(value.quantityEstimateMax) ??
+    readNumber(value.maximumQuantityEstimate) ??
+    readNumber(value.maximumQuantity) ??
+    readNumber(value.maxQuantityEstimate) ??
+    readNumber(value.maxQuantity);
+
+  if (minimum === null || maximum === null) {
+    return null;
+  }
+
+  return { min: minimum, max: maximum };
 }
 
 function readCoordinates(tile: Record<string, unknown>): { x: number | null; y: number | null } {
@@ -142,26 +186,56 @@ function extractProbabilities(tile: Record<string, unknown>): ScanProbabilityRow
           readString(entry.resourceType) ??
           readString(entry.siteType) ??
           readString(entry.resource) ??
-          "unknown",
-        probability: readNumber(entry.probability) ?? 0,
+          "none",
+        probability:
+          (readNumber(entry.probabilityPct) ?? readNumber(entry.probability) ?? 0) /
+          (readNumber(entry.probabilityPct) !== null ? 100 : 1),
         quantityEstimate: readQuantityEstimate(entry),
+        quantityRange: readQuantityRange(entry),
       };
-    })
-    .sort((left, right) => right.probability - left.probability);
+    });
 }
 
 function extractScanTiles(response: WorldScanResponse): ScanTileSummary[] {
-  const rawTiles = Array.isArray(response.tiles)
-    ? response.tiles
-    : Array.isArray(response.results)
-      ? response.results
-      : [];
+  const scanEnvelope = isRecord(response.scan) ? response.scan : null;
+  const rawTiles = Array.isArray(scanEnvelope?.tiles)
+    ? scanEnvelope.tiles
+    : Array.isArray(response.tiles)
+      ? response.tiles
+      : Array.isArray(response.results)
+        ? response.results
+        : [];
 
   return rawTiles.filter(isRecord).map((tile) => {
     const { x, y } = readCoordinates(tile);
     const probabilities = extractProbabilities(tile);
+    const sortedProbabilities = sortByProbability(probabilities);
     const tileQuantityEstimate = readQuantityEstimate(tile);
-    const topProbabilityQuantityEstimate = probabilities[0]?.quantityEstimate ?? null;
+    const tileQuantityRange = readQuantityRange(tile);
+    const topCandidate = isRecord(tile.topCandidate)
+      ? {
+          resourceType: readString(tile.topCandidate.resourceType) ?? "none",
+          probability:
+            (readNumber(tile.topCandidate.probabilityPct) ??
+              readNumber(tile.topCandidate.probability) ??
+              0) /
+            (readNumber(tile.topCandidate.probabilityPct) !== null ? 100 : 1),
+          quantityEstimate: readQuantityEstimate(tile.quantityEstimate),
+          quantityRange: readQuantityRange(tile.quantityEstimate),
+        }
+      : null;
+    const topProbabilityQuantityEstimate =
+      topCandidate?.quantityEstimate ?? sortedProbabilities[0]?.quantityEstimate ?? null;
+    const topProbabilityQuantityRange =
+      topCandidate?.quantityRange ?? sortedProbabilities[0]?.quantityRange ?? null;
+    const normalizedProbabilities = topCandidate
+      ? [
+          topCandidate,
+          ...sortedProbabilities.filter(
+            (probability) => probability.resourceType !== topCandidate.resourceType,
+          ),
+        ]
+      : probabilities;
 
     return {
       x,
@@ -177,7 +251,8 @@ function extractScanTiles(response: WorldScanResponse): ScanTileSummary[] {
         "unknown",
       quantityEstimate:
         tileQuantityEstimate !== null ? tileQuantityEstimate : topProbabilityQuantityEstimate,
-      probabilities,
+      quantityRange: tileQuantityRange ?? topProbabilityQuantityRange,
+      probabilities: normalizedProbabilities,
     };
   });
 }
@@ -191,14 +266,152 @@ function formatDistance(value: number | null): string {
 }
 
 function formatProbability(value: number): string {
-  return `${(value * 100).toFixed(1)}%`;
+  return `${(value * 100).toFixed(2)}%`;
 }
 
 function formatQuantityEstimate(value: number | null): string {
   return value === null ? "unknown" : String(value);
 }
 
-export function printScanResponse(response: WorldScanResponse): void {
+function formatQuantityRange(value: { min: number; max: number } | null): string {
+  return value === null ? "unknown" : `${value.min} to ${value.max}`;
+}
+
+function normalizeTerrainName(terrain: string): string {
+  const normalized = terrain.trim().toLowerCase();
+
+  if (normalized.includes("plain") || normalized.includes("flat")) {
+    return "flat";
+  }
+
+  return terrain;
+}
+
+function getOfficialMaterialTypes(resources: IndustryResource[]): string[] {
+  const materialTypes = resources
+    .filter((resource) => resource.kind.trim().toLowerCase() === "material")
+    .map((resource) => resource.resourceType);
+
+  if (materialTypes.length > 0) {
+    return [...new Set(materialTypes)];
+  }
+
+  return [...new Set(resources.map((resource) => resource.resourceType))];
+}
+
+function buildProbabilityLookup(
+  probabilities: ScanProbabilityRow[],
+): Map<string, ScanProbabilityRow> {
+  const lookup = new Map<string, ScanProbabilityRow>();
+
+  for (const probability of probabilities) {
+    lookup.set(probability.resourceType, probability);
+  }
+
+  return lookup;
+}
+
+function createNormalizedProbabilityRows(
+  probabilities: ScanProbabilityRow[],
+  officialResources: IndustryResource[],
+): ScanProbabilityRow[] {
+  const officialMaterialTypes = getOfficialMaterialTypes(officialResources);
+  const probabilityLookup = buildProbabilityLookup(probabilities);
+  const normalizedRows: ScanProbabilityRow[] = [];
+  let explicitTotal = 0;
+
+  for (const resourceType of officialMaterialTypes) {
+    const probability = probabilityLookup.get(resourceType);
+    const nextRow: ScanProbabilityRow = {
+      resourceType,
+      probability: probability?.probability ?? 0,
+      quantityEstimate: probability?.quantityEstimate ?? null,
+      quantityRange: probability?.quantityRange ?? null,
+    };
+
+    explicitTotal += nextRow.probability;
+    normalizedRows.push(nextRow);
+  }
+
+  const noneProbability =
+    probabilityLookup.get("none")?.probability ??
+    probabilityLookup.get("empty")?.probability ??
+    Math.max(0, 1 - explicitTotal);
+
+  normalizedRows.push({
+    resourceType: "none",
+    probability: noneProbability,
+    quantityEstimate: null,
+    quantityRange: null,
+  });
+
+  const total = normalizedRows.reduce((sum, row) => sum + row.probability, 0);
+
+  if (total <= 0) {
+    return normalizedRows.map((row) => ({
+      ...row,
+      probability: row.resourceType === "none" ? 1 : 0,
+    }));
+  }
+
+  return normalizedRows.map((row) => ({
+    ...row,
+    probability: row.probability / total,
+  }));
+}
+
+function getRoundedPercents(probabilities: number[]): number[] {
+  const scaledEntries = probabilities.map((probability, index) => {
+    const scaled = probability * 10000;
+    const floorValue = Math.floor(scaled);
+
+    return {
+      index,
+      floorValue,
+      remainder: scaled - floorValue,
+    };
+  });
+  let assignedTotal = scaledEntries.reduce((sum, entry) => sum + entry.floorValue, 0);
+  const missingUnits = 10000 - assignedTotal;
+
+  for (const entry of scaledEntries
+    .slice()
+    .sort((left, right) => right.remainder - left.remainder)
+    .slice(0, Math.max(0, missingUnits))) {
+    scaledEntries[entry.index].floorValue += 1;
+    assignedTotal += 1;
+  }
+
+  return scaledEntries.map((entry) => entry.floorValue);
+}
+
+function formatRoundedPercent(value: number): string {
+  return `${(value / 100).toFixed(2)}%`;
+}
+
+function sortByProbability(probabilities: ScanProbabilityRow[]): ScanProbabilityRow[] {
+  return [...probabilities].sort((left, right) => right.probability - left.probability);
+}
+
+function getTopCandidate(tile: ScanTileSummary, probabilities: ScanProbabilityRow[]): ScanProbabilityRow {
+  const sorted = sortByProbability(probabilities);
+
+  return {
+    resourceType: sorted[0]?.resourceType ?? "none",
+    probability: sorted[0]?.probability ?? 0,
+    quantityEstimate:
+      sorted[0]?.quantityEstimate ??
+      tile.quantityEstimate,
+    quantityRange:
+      sorted[0]?.quantityRange ??
+      tile.quantityRange,
+  };
+}
+
+export function printScanResponse(
+  response: WorldScanResponse,
+  options: ScanOutputOptions,
+): void {
   const tiles = extractScanTiles(response);
 
   if (tiles.length === 0) {
@@ -206,24 +419,35 @@ export function printScanResponse(response: WorldScanResponse): void {
     return;
   }
 
+  console.log(
+    `Scan position: (${options.x}, ${options.y}) | Sensor strength: ${options.sensorStrength} | Radius: ${options.radiusTiles}`,
+  );
+
   if (tiles.length === 1) {
     const tile = tiles[0];
+    const probabilities = createNormalizedProbabilityRows(tile.probabilities, options.officialResources);
+    const roundedPercents = getRoundedPercents(probabilities.map((entry) => entry.probability));
+    const topCandidate = getTopCandidate(tile, probabilities);
 
+    console.log(`Terrain: ${normalizeTerrainName(tile.terrain)}`);
     console.log(
-      `Tile (${formatCoordinate(tile.x)}, ${formatCoordinate(tile.y)}) | Distance: ${formatDistance(tile.distance)} | Terrain: ${tile.terrain}`,
+      `Most likely resource: ${topCandidate.resourceType} (${formatProbability(topCandidate.probability)})`,
     );
-    console.log(`Quantity estimate: ${formatQuantityEstimate(tile.quantityEstimate)}`);
 
-    if (tile.probabilities.length === 0) {
+    if (topCandidate.resourceType !== "none") {
+      console.log(`Estimated quantity: ${formatQuantityEstimate(topCandidate.quantityEstimate)}`);
+      console.log(`Estimated range: ${formatQuantityRange(topCandidate.quantityRange)}`);
+    }
+
+    if (probabilities.length === 0) {
       console.log("No resource probabilities were returned for this tile.");
       return;
     }
 
     console.table(
-      tile.probabilities.map((entry) => ({
+      probabilities.map((entry, index) => ({
         Resource: entry.resourceType,
-        Probability: formatProbability(entry.probability),
-        "Quantity Estimate": formatQuantityEstimate(entry.quantityEstimate),
+        Probability: formatRoundedPercent(roundedPercents[index]),
       })),
     );
     return;
@@ -231,15 +455,16 @@ export function printScanResponse(response: WorldScanResponse): void {
 
   console.table(
     tiles.map((tile) => {
-      const topCandidate = tile.probabilities[0];
+      const probabilities = createNormalizedProbabilityRows(tile.probabilities, options.officialResources);
+      const topCandidate = getTopCandidate(tile, probabilities);
 
       return {
         Coordinates: `(${formatCoordinate(tile.x)}, ${formatCoordinate(tile.y)})`,
         Distance: formatDistance(tile.distance),
-        Terrain: tile.terrain,
-        "Top Candidate": topCandidate?.resourceType ?? "unknown",
-        Confidence: topCandidate ? formatProbability(topCandidate.probability) : "unknown",
-        "Estimated Quantity": formatQuantityEstimate(tile.quantityEstimate),
+        Terrain: normalizeTerrainName(tile.terrain),
+        "Top Candidate": topCandidate.resourceType,
+        Confidence: formatProbability(topCandidate.probability),
+        "Estimated Quantity": formatQuantityEstimate(topCandidate.quantityEstimate),
       };
     }),
   );
