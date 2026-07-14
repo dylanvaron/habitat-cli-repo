@@ -2,26 +2,38 @@ import { createServerApp } from "./server/app";
 import { logEvent } from "./logging";
 import { getHabitatDirPath, loadRegistration } from "./state";
 
-const port = Number(process.env.PORT ?? "3000");
-const hostname = "127.0.0.1";
+export function getHabitatApiPort(): number {
+  const rawPort = process.env.HABITAT_API_PORT ?? "8787";
+  const port = Number(rawPort);
 
-if (!Number.isInteger(port) || port <= 0) {
-  throw new Error(`Invalid PORT value "${process.env.PORT}".`);
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error(`Invalid HABITAT_API_PORT value "${rawPort}".`);
+  }
+
+  return port;
 }
 
-const app = createServerApp();
+export function startHabitatApiServer(): void {
+  const port = getHabitatApiPort();
+  const hostname = "0.0.0.0";
+  const app = createServerApp();
 
-Bun.serve({
-  hostname,
-  port,
-  fetch: app.fetch,
-});
+  Bun.serve({
+    hostname,
+    port,
+    fetch: app.fetch,
+  });
 
-console.log(`Habitat backend listening on http://${hostname}:${port}`);
-logEvent("habitat-api", `state dir -> ${getHabitatDirPath()}`);
+  console.log(`Habitat backend listening on http://${hostname}:${port}`);
+  logEvent("habitat-api", `state dir -> ${getHabitatDirPath()}`);
 
-const registration = loadRegistration();
-logEvent(
-  "habitat-api",
-  `startup -> ${registration ? `registered ${registration.displayName}` : "not registered"}`,
-);
+  const registration = loadRegistration();
+  logEvent(
+    "habitat-api",
+    `startup -> ${registration ? `registered ${registration.displayName}` : "not registered"}`,
+  );
+}
+
+if (import.meta.main) {
+  startHabitatApiServer();
+}

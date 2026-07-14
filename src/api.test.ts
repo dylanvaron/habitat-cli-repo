@@ -41,7 +41,7 @@ describe("habitat api client", () => {
   test("defaults to the local backend url", () => {
     delete process.env.HABITAT_API_BASE_URL;
 
-    expect(getHabitatApiBaseUrl()).toBe("http://127.0.0.1:3000");
+    expect(getHabitatApiBaseUrl()).toBe("http://127.0.0.1:8787");
   });
 
   test("trims trailing slashes from the configured base url", () => {
@@ -51,10 +51,10 @@ describe("habitat api client", () => {
   });
 
   test("sends json requests and parses json responses", async () => {
-    process.env.HABITAT_API_BASE_URL = "http://127.0.0.1:3000/";
+    process.env.HABITAT_API_BASE_URL = "http://127.0.0.1:8787/";
 
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/modules");
+      expect(String(input)).toBe("http://127.0.0.1:8787/modules");
       expect(init?.method).toBe("POST");
       expect(init?.headers).toEqual({
         "Content-Type": "application/json",
@@ -127,7 +127,7 @@ describe("habitat api client", () => {
 
   test("builds the registration status request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/registration");
+      expect(String(input)).toBe("http://127.0.0.1:8787/registration");
 
       return new Response(
         JSON.stringify({
@@ -150,7 +150,7 @@ describe("habitat api client", () => {
 
   test("builds the registration create request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/registration");
+      expect(String(input)).toBe("http://127.0.0.1:8787/registration");
       expect(init?.method).toBe("POST");
       expect(init?.body).toBe(JSON.stringify({ displayName: "Artemis Ridge" }));
 
@@ -179,7 +179,7 @@ describe("habitat api client", () => {
 
   test("builds the registration delete request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/registration");
+      expect(String(input)).toBe("http://127.0.0.1:8787/registration");
       expect(init?.method).toBe("DELETE");
 
       return new Response(JSON.stringify({ displayName: "Artemis Ridge" }), {
@@ -197,7 +197,7 @@ describe("habitat api client", () => {
 
   test("builds the catalog blueprint list request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/catalog/blueprints?version=2026-07-10");
+      expect(String(input)).toBe("http://127.0.0.1:8787/catalog/blueprints?version=2026-07-10");
 
       return new Response(
         JSON.stringify({ catalogVersion: "2026-07-10", blueprints: [] }),
@@ -214,7 +214,7 @@ describe("habitat api client", () => {
 
   test("builds the catalog blueprint show request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/catalog/blueprints/greenhouse");
+      expect(String(input)).toBe("http://127.0.0.1:8787/catalog/blueprints/greenhouse");
 
       return new Response(
         JSON.stringify({
@@ -236,7 +236,7 @@ describe("habitat api client", () => {
 
   test("builds the catalog resource list request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/catalog/resources");
+      expect(String(input)).toBe("http://127.0.0.1:8787/catalog/resources");
 
       return new Response(
         JSON.stringify({ catalogVersion: "2026-07-10", resources: [] }),
@@ -253,7 +253,7 @@ describe("habitat api client", () => {
 
   test("builds the solar status request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/solar");
+      expect(String(input)).toBe("http://127.0.0.1:8787/solar");
 
       return new Response(
         JSON.stringify({
@@ -275,7 +275,7 @@ describe("habitat api client", () => {
 
   test("builds the module list request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/modules");
+      expect(String(input)).toBe("http://127.0.0.1:8787/modules");
 
       return new Response(JSON.stringify({ modules: [] }), {
         status: 200,
@@ -292,7 +292,7 @@ describe("habitat api client", () => {
 
   test("builds the module show request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/modules/alpha");
+      expect(String(input)).toBe("http://127.0.0.1:8787/modules/alpha");
 
       return new Response(
         JSON.stringify({ module: { id: "alpha", displayName: "Alpha", connectedTo: [], runtimeAttributes: {}, capabilities: [] } }),
@@ -309,7 +309,7 @@ describe("habitat api client", () => {
 
   test("builds the module create request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/modules");
+      expect(String(input)).toBe("http://127.0.0.1:8787/modules");
       expect(init?.method).toBe("POST");
       expect(init?.body).toBe(JSON.stringify({ blueprintId: "greenhouse", displayName: "Greenhouse Alpha" }));
 
@@ -328,7 +328,7 @@ describe("habitat api client", () => {
 
   test("builds the module update request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/modules/alpha");
+      expect(String(input)).toBe("http://127.0.0.1:8787/modules/alpha");
       expect(init?.method).toBe("PATCH");
       expect(init?.body).toBe(JSON.stringify({ displayName: "Alpha Prime", runtimeAttributes: { health: 90 } }));
 
@@ -350,7 +350,7 @@ describe("habitat api client", () => {
 
   test("builds the module status request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/modules/alpha");
+      expect(String(input)).toBe("http://127.0.0.1:8787/modules/alpha");
       expect(init?.method).toBe("PATCH");
       expect(init?.body).toBe(JSON.stringify({ status: "active" }));
 
@@ -369,7 +369,7 @@ describe("habitat api client", () => {
 
   test("builds the module delete request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/modules/alpha");
+      expect(String(input)).toBe("http://127.0.0.1:8787/modules/alpha");
       expect(init?.method).toBe("DELETE");
 
       return new Response(null, { status: 204 });
@@ -382,7 +382,7 @@ describe("habitat api client", () => {
 
   test("builds the inventory read request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/inventory");
+      expect(String(input)).toBe("http://127.0.0.1:8787/inventory");
 
       return new Response(JSON.stringify({ inventory: { water: 50 } }), {
         status: 200,
@@ -399,7 +399,7 @@ describe("habitat api client", () => {
 
   test("builds the inventory update request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/inventory");
+      expect(String(input)).toBe("http://127.0.0.1:8787/inventory");
       expect(init?.method).toBe("PATCH");
       expect(init?.body).toBe(JSON.stringify({ resourceType: "water", amount: 50 }));
 
@@ -418,7 +418,7 @@ describe("habitat api client", () => {
 
   test("builds the build list request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/builds");
+      expect(String(input)).toBe("http://127.0.0.1:8787/builds");
 
       return new Response(JSON.stringify({ builds: [] }), {
         status: 200,
@@ -435,7 +435,7 @@ describe("habitat api client", () => {
 
   test("builds the build show request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/builds/greenhouse-build-1");
+      expect(String(input)).toBe("http://127.0.0.1:8787/builds/greenhouse-build-1");
 
       return new Response(
         JSON.stringify({ build: { id: "greenhouse-build-1", displayName: "Greenhouse Alpha" } }),
@@ -452,7 +452,7 @@ describe("habitat api client", () => {
 
   test("builds the build create request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/builds");
+      expect(String(input)).toBe("http://127.0.0.1:8787/builds");
       expect(init?.method).toBe("POST");
       expect(init?.body).toBe(
         JSON.stringify({ blueprintId: "greenhouse", displayName: "Greenhouse Alpha", dryRun: true }),
@@ -479,7 +479,7 @@ describe("habitat api client", () => {
 
   test("builds the build cancel request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/builds/greenhouse-build-1");
+      expect(String(input)).toBe("http://127.0.0.1:8787/builds/greenhouse-build-1");
       expect(init?.method).toBe("DELETE");
 
       return new Response(
@@ -500,7 +500,7 @@ describe("habitat api client", () => {
 
   test("builds the tick request", async () => {
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://127.0.0.1:3000/ticks");
+      expect(String(input)).toBe("http://127.0.0.1:8787/ticks");
       expect(init?.method).toBe("POST");
       expect(init?.body).toBe(JSON.stringify({ tickCount: 1 }));
 

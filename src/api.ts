@@ -1,5 +1,5 @@
 export function getHabitatApiBaseUrl(): string {
-  const rawBaseUrl = process.env.HABITAT_API_BASE_URL ?? "http://127.0.0.1:3000";
+  const rawBaseUrl = process.env.HABITAT_API_BASE_URL ?? "http://127.0.0.1:8787";
   return rawBaseUrl.replace(/\/+$/, "");
 }
 
