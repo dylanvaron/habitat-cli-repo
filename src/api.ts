@@ -17,6 +17,7 @@ import type {
   ResourceCatalogResponse,
   ResourceInventory,
   SolarIrradianceResponse,
+  WorldScanResponse,
 } from "./state";
 
 type ApiMethod = "GET" | "POST" | "PATCH" | "DELETE";
@@ -151,6 +152,24 @@ export async function listCatalogResources(version?: string): Promise<ResourceCa
 
 export async function getSolarStatus(): Promise<SolarIrradianceResponse> {
   return habitatApiRequest<SolarIrradianceResponse>("GET", "/solar");
+}
+
+export type ResourceScanOptions = {
+  x: number;
+  y: number;
+  sensorStrength: number;
+  radiusTiles?: number;
+};
+
+export async function scanResources(options: ResourceScanOptions): Promise<WorldScanResponse> {
+  const params = new URLSearchParams({
+    x: String(options.x),
+    y: String(options.y),
+    sensorStrength: String(options.sensorStrength),
+    radiusTiles: String(options.radiusTiles ?? 0),
+  });
+
+  return habitatApiRequest<WorldScanResponse>("GET", `/scan?${params.toString()}`);
 }
 
 export type ModulesResponse = {

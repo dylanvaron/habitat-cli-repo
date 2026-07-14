@@ -119,6 +119,8 @@ export type SolarIrradianceResponse = {
   solarIrradiance: SolarIrradianceReading;
 };
 
+export type WorldScanResponse = Record<string, unknown>;
+
 export type ResourceInventory = Record<string, number>;
 
 export type BlueprintIndex = Record<string, ProductionBlueprint>;

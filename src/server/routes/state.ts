@@ -28,9 +28,84 @@ import {
   validateBuildFacilityRequirement,
   validateSupplyCacheOnline,
 } from "../../state";
-import { getWorldSolarIrradiance } from "../../kepler";
+import { getWorldSolarIrradiance, scanWorldTiles } from "../../kepler";
+
+function parseIntegerQueryParam(rawValue: string | undefined, name: string): number {
+  if (typeof rawValue !== "string" || rawValue.trim().length === 0) {
+    throw new Error(`${name} is required.`);
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isInteger(value)) {
+    throw new Error(`${name} must be an integer.`);
+  }
+
+  return value;
+}
+
+function validateSensorStrength(sensorStrength: number): void {
+  if (sensorStrength < 0 || sensorStrength > 100) {
+    throw new Error("sensorStrength must be between 0 and 100.");
+  }
+}
+
+function validateRadiusTiles(radiusTiles: number): void {
+  if (radiusTiles < 0 || radiusTiles > 5) {
+    throw new Error("radiusTiles must be between 0 and 5.");
+  }
+}
 
 export function registerStateRoutes(app: Hono): void {
+  app.get("/scan", async (context) => {
+    const registration = loadRegistration();
+
+    if (!registration) {
+      logHabitatApiResponse("GET", "/scan", "This CLI is not registered with Kepler yet.");
+      return context.json({ error: "This CLI is not registered with Kepler yet." }, 409);
+    }
+
+    let x: number;
+    let y: number;
+    let sensorStrength: number;
+    let radiusTiles: number;
+
+    try {
+      x = parseIntegerQueryParam(context.req.query("x"), "x");
+      y = parseIntegerQueryParam(context.req.query("y"), "y");
+      sensorStrength = parseIntegerQueryParam(
+        context.req.query("sensorStrength"),
+        "sensorStrength",
+      );
+      radiusTiles = parseIntegerQueryParam(
+        context.req.query("radiusTiles") ?? "0",
+        "radiusTiles",
+      );
+
+      validateSensorStrength(sensorStrength);
+      validateRadiusTiles(radiusTiles);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logHabitatApiResponse("GET", "/scan", message);
+      return context.json({ error: message }, 400);
+    }
+
+    const response = await scanWorldTiles(
+      registration.habitatId,
+      x,
+      y,
+      sensorStrength,
+      radiusTiles,
+    );
+
+    logHabitatApiResponse(
+      "GET",
+      "/scan",
+      `proxied to Kepler for ${registration.displayName}`,
+    );
+    return context.json(response);
+  });
+
   app.get("/modules", (context) => {
     const modules = Object.values(loadModules()).sort((left, right) =>
       left.id.localeCompare(right.id),

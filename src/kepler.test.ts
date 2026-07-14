@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   getOfficialBlueprint,
+  scanWorldTiles,
   getWorldSolarIrradiance,
   listOfficialBlueprints,
   listOfficialResources,
@@ -196,6 +197,31 @@ describe("kepler blueprint catalog helpers", () => {
     expect(response.solarIrradiance).toEqual({
       wPerM2: 900,
       condition: "clear",
+    });
+  });
+
+  test("builds the world scan request", async () => {
+    const fetchMock = mock(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe(
+        "https://planet.turingguild.com/world/scan?habitatId=hab_123&x=3&y=-2&sensorStrength=60&radiusTiles=0",
+      );
+
+      return new Response(
+        JSON.stringify({
+          origin: { x: 3, y: -2 },
+          results: [],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const response = await scanWorldTiles("hab_123", 3, -2, 60, 0);
+
+    expect(response).toEqual({
+      origin: { x: 3, y: -2 },
+      results: [],
     });
   });
 });

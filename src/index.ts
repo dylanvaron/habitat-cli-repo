@@ -7,6 +7,7 @@ import { registerConstructCommands } from "./commands/construct";
 import { registerHabitatCommands } from "./commands/habitat";
 import { registerModuleCommands } from "./commands/module";
 import { registerResourceCommands } from "./commands/resource";
+import { registerScanCommands } from "./commands/scan";
 import { registerSolarCommands } from "./commands/solar";
 import { getHabitatDatabasePath } from "./state";
 
@@ -43,6 +44,7 @@ registerHabitatCommands(program);
 registerCatalogCommands(program);
 registerConstructCommands(program);
 registerResourceCommands(program);
+registerScanCommands(program);
 registerSolarCommands(program);
 registerModuleCommands(program);
 

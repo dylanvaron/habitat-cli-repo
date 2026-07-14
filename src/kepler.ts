@@ -5,6 +5,7 @@ import type {
   ResourceCatalogResponse,
   RegistrationResponse,
   SolarIrradianceResponse,
+  WorldScanResponse,
 } from "./state";
 import { getRequestPathLabel, logEvent } from "./logging";
 
@@ -138,4 +139,23 @@ export async function listOfficialResources(
 
 export async function getWorldSolarIrradiance(): Promise<SolarIrradianceResponse> {
   return keplerRequest<SolarIrradianceResponse>("GET", "/world/solar-irradiance");
+}
+
+export async function scanWorldTiles(
+  habitatId: string,
+  x: number,
+  y: number,
+  sensorStrength: number,
+  radiusTiles: number,
+): Promise<WorldScanResponse> {
+  return keplerRequest<WorldScanResponse>(
+    "GET",
+    buildRequestPath("/world/scan", {
+      habitatId,
+      x: String(x),
+      y: String(y),
+      sensorStrength: String(sensorStrength),
+      radiusTiles: String(radiusTiles),
+    }),
+  );
 }

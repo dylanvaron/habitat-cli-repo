@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   addInventoryResource,
   cancelBuild,
@@ -20,12 +20,17 @@ import {
   listCatalogBlueprints,
   listCatalogResources,
   runTick,
+  scanResources,
   setModuleStatus,
   updateModule,
 } from "./api";
 
 const originalFetch = globalThis.fetch;
 const originalBaseUrl = process.env.HABITAT_API_BASE_URL;
+
+beforeEach(() => {
+  delete process.env.HABITAT_API_BASE_URL;
+});
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -271,6 +276,35 @@ describe("habitat api client", () => {
     const response = await getSolarStatus();
 
     expect(response.solarIrradiance.condition).toBe("clear");
+  });
+
+  test("builds the resource scan request", async () => {
+    const fetchMock = mock(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe(
+        "http://127.0.0.1:8787/scan?x=3&y=-2&sensorStrength=60&radiusTiles=0",
+      );
+
+      return new Response(
+        JSON.stringify({
+          origin: { x: 3, y: -2 },
+          results: [],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const response = await scanResources({
+      x: 3,
+      y: -2,
+      sensorStrength: 60,
+    });
+
+    expect(response).toEqual({
+      origin: { x: 3, y: -2 },
+      results: [],
+    });
   });
 
   test("builds the module list request", async () => {
