@@ -1,6 +1,9 @@
 import { createServerApp } from "./server/app";
+import { loadProjectEnv } from "./env";
 import { logEvent } from "./logging";
 import { getHabitatDatabasePath, loadRegistration } from "./state";
+
+loadProjectEnv();
 
 export function getHabitatApiPort(): number {
   const rawPort = process.env.HABITAT_API_PORT ?? "8787";

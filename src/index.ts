@@ -2,6 +2,7 @@
 
 import { Command } from "commander";
 import packageJson from "../package.json";
+import { loadProjectEnv } from "./env";
 import { registerCatalogCommands } from "./commands/catalog";
 import { registerConstructCommands } from "./commands/construct";
 import { registerHabitatCommands } from "./commands/habitat";
@@ -10,6 +11,8 @@ import { registerResourceCommands } from "./commands/resource";
 import { registerScanCommands } from "./commands/scan";
 import { registerSolarCommands } from "./commands/solar";
 import { getHabitatDatabasePath } from "./state";
+
+loadProjectEnv();
 
 const program = new Command();
 
