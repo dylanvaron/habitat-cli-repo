@@ -4,6 +4,7 @@ import { registerHealthRoutes } from "./routes/health";
 import { registerKeplerRoutes } from "./routes/kepler";
 import { registerRegistrationRoutes } from "./routes/registration";
 import { registerStateRoutes } from "./routes/state";
+import { registerStaticUiRoutes } from "./static";
 
 function getErrorResponse(error: unknown): { status: number; message: string } {
   const message = error instanceof Error ? error.message : String(error);
@@ -49,6 +50,7 @@ export function createServerApp(): Hono {
   registerKeplerRoutes(app);
   registerRegistrationRoutes(app);
   registerStateRoutes(app);
+  registerStaticUiRoutes(app);
 
   return app;
 }
